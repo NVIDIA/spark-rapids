@@ -561,7 +561,8 @@ uses the full Iceberg suite. The caller does not schedule full versus fast runs 
 Catalog and version restrictions still apply. A marker filter matching no tests retains pytest's
 failure status; it is distinct from a successful skip for an empty version selection.
 
-Runtime version queries read only `scripts/iceberg-versions.json`. The dedicated premerge validation
+Runtime version queries accept exact `major.minor.patch` releases and read only
+`scripts/iceberg-versions.json`; snapshot selection is not implemented. The dedicated premerge validation
 job checks the complete matrix against Maven using the canonical Scala 2.13 POM, which includes the
 Spark 4 profiles absent from the Scala 2.12 reactor.
 

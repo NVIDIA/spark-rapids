@@ -34,7 +34,8 @@ import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, TypeVar, Union
+from typing import (Any, Callable, Dict, List, Optional, Sequence, Set, Type, TypeVar, Union,
+                    get_args, get_origin, get_type_hints)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MATRIX = REPO_ROOT / "scripts" / "iceberg-versions.json"
@@ -55,13 +56,6 @@ class MatrixError(ValueError):
     """
 
 
-def _version_parts(version: str) -> Tuple[int, int, int]:
-    if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
-        raise MatrixError(f"invalid version: {version!r}")
-    major, minor, patch = version.split(".")
-    return int(major), int(minor), int(patch)
-
-
 Release = TypeVar("Release", bound="_ReleaseVersion")
 
 
@@ -74,12 +68,17 @@ class _ReleaseVersion:
     patch: int
 
     def __post_init__(self) -> None:
-        _validate_version_parts(self.major, self.minor, self.patch)
+        parts = (self.major, self.minor, self.patch)
+        if any(type(part) is not int or part < 0 for part in parts):
+            raise MatrixError(f"invalid release components: {parts!r}")
 
     @classmethod
     def parse(cls: Type[Release], version: str) -> Release:
         """Parse an exact major.minor.patch release; raise MatrixError otherwise."""
-        return cls(*_version_parts(version))
+        if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
+            raise MatrixError(f"invalid version: {version!r}")
+        major, minor, patch = version.split(".")
+        return cls(int(major), int(minor), int(patch))
 
     def __str__(self) -> str:
         """Return the release string used by JSON and the command line."""
@@ -107,11 +106,6 @@ class IcebergVersion(_ReleaseVersion):
     Numeric ordering, parsing, and formatting share the release implementation,
     while equality and ordering remain distinct from the Spark version domain.
     """
-
-
-def _validate_version_parts(major: int, minor: int, patch: int) -> None:
-    if any(type(part) is not int or part < 0 for part in (major, minor, patch)):
-        raise MatrixError(f"invalid release components: {(major, minor, patch)!r}")
 
 
 def _pom_properties(element: ET.Element) -> Dict[str, str]:
@@ -263,13 +257,9 @@ Version = Union[SparkVersion, IcebergVersion]
 
 
 def _index_records(records: List[Record]) -> Dict[Version, Record]:
-    """Index decoded JSON records, rejecting duplicate or malformed versions."""
-    if not isinstance(records, list):
-        raise MatrixError("version records must be a list")
+    """Index typed JSON records without losing duplicate-version diagnostics."""
     indexed: Dict[Version, Record] = {}
     for record in records:
-        if not isinstance(record, (SparkSupport, IcebergSupport)):
-            raise MatrixError("each version entry requires its declared record fields")
         if record.version in indexed:
             kind = "Spark" if isinstance(record, SparkSupport) else "Iceberg"
             raise MatrixError(f"duplicate {kind} version: {record.version}")
@@ -277,18 +267,12 @@ def _index_records(records: List[Record]) -> Dict[Version, Record]:
     return indexed
 
 
-def _decode_minimums(minimums: Dict[str, str]) -> Dict[str, SparkVersion]:
-    """Decode JSON minimum test baselines as Spark versions."""
-    if not isinstance(minimums, dict):
-        raise MatrixError("upstream_minimums must be a mapping")
-    return {family: SparkVersion.parse(minimum) for family, minimum in minimums.items()}
-
-
 @dataclass(frozen=True)
 class SparkSupport:
     """One Spark release's test eligibility for a particular Iceberg release.
 
-    Construction validates the record, including through the JSON decoder hook.
+    Field annotations drive JSON decoding and type checks; construction checks
+    the relationship between the support flag and exclusion reason.
     This records cudf-spark test policy, not an upstream compatibility guarantee.
 
     Attributes:
@@ -299,17 +283,13 @@ class SparkSupport:
             otherwise None. It is included in rejected-request diagnostics.
     """
 
-    version: SparkVersion = field(metadata={"decoder": SparkVersion.parse})
+    version: SparkVersion
     supported: bool
     reason: Optional[str] = None
 
     def __post_init__(self) -> None:
-        """Reject invalid versions, support flags, and exclusion reasons."""
-        if not isinstance(self.version, SparkVersion):
-            raise MatrixError("Spark support requires a SparkVersion")
-        if type(self.supported) is not bool:
-            raise MatrixError(f"supported must be boolean for Spark {self.version}")
-        if not self.supported and (not isinstance(self.reason, str) or not self.reason.strip()):
+        """Require a non-blank reason exactly when a combination is unsupported."""
+        if not self.supported and (self.reason is None or not self.reason.strip()):
             raise MatrixError(f"unsupported Spark {self.version} needs a reason")
         if self.supported and self.reason is not None:
             raise MatrixError(f"supported Spark {self.version} cannot have a reason")
@@ -331,28 +311,18 @@ class IcebergSupport:
             exactly once, and that each support flag agrees with Maven packaging.
     """
 
-    version: IcebergVersion = field(metadata={"decoder": IcebergVersion.parse})
+    version: IcebergVersion
     spark_minor_to_patch: Dict[str, SparkVersion] = field(
-        metadata={"json_name": "upstream_minimums", "decoder": _decode_minimums})
+        metadata={"json_name": "upstream_minimums"})
     spark_supports: Dict[SparkVersion, SparkSupport] = field(
-        metadata={"json_name": "spark_versions", "decoder": _index_records})
+        metadata={"json_name": "spark_versions"})
 
     def __post_init__(self) -> None:
-        """Validate the version, baselines, and decoded Spark records at construction."""
-        if not isinstance(self.version, IcebergVersion):
-            raise MatrixError("Iceberg support requires an IcebergVersion")
-        if not isinstance(self.spark_minor_to_patch, dict) or not self.spark_minor_to_patch:
-            raise MatrixError(f"upstream_minimums for Iceberg {self.version} must be a mapping")
-        if not isinstance(self.spark_supports, dict) or not self.spark_supports:
-            raise MatrixError(f"spark_versions for Iceberg {self.version} must decode to a mapping")
+        """Ensure each baseline belongs to its declared Spark family."""
         for family, minimum in self.spark_minor_to_patch.items():
-            if not isinstance(minimum, SparkVersion) or minimum.family != family:
+            if minimum.family != family:
                 raise MatrixError(
                     f"minimum {minimum!r} does not belong to Spark family {family!r}")
-        for version, support in self.spark_supports.items():
-            if not isinstance(version, SparkVersion) or not isinstance(support, SparkSupport):
-                raise MatrixError(
-                    f"Spark entries for Iceberg {self.version} require version and supported")
 
     def validate(self, packaging: MavenPackaging) -> None:
         """Compare eligible Spark records and support flags with inferred Maven combinations.
@@ -428,16 +398,7 @@ class IcebergVersionMatrix:
     """
 
     iceberg_supports: Dict[IcebergVersion, IcebergSupport] = field(
-        metadata={"json_name": "iceberg_versions", "decoder": _index_records})
-
-    def __post_init__(self) -> None:
-        """Require decoded Iceberg records with unique runtime versions."""
-        if not isinstance(self.iceberg_supports, dict) or not self.iceberg_supports:
-            raise MatrixError("iceberg_versions must decode to a non-empty mapping")
-        if any(not isinstance(version, IcebergVersion) or not isinstance(support, IcebergSupport)
-               for version, support in self.iceberg_supports.items()):
-            raise MatrixError(
-                "each Iceberg entry requires version, upstream_minimums, and spark_versions")
+        metadata={"json_name": "iceberg_versions"})
 
     @classmethod
     def load(cls, matrix_path: Path = DEFAULT_MATRIX) -> IcebergVersionMatrix:
@@ -494,26 +455,15 @@ class IcebergVersionMatrix:
         """Return enabled Iceberg versions for Spark, preserving matrix order.
 
         Args:
-            spark_version: Exact ``major.minor.patch`` Spark release, or a
-                well-formed ``major.minor.patch-SNAPSHOT`` in a family absent
-                from every Iceberg baseline mapping.
+            spark_version: Exact ``major.minor.patch`` Spark release.
 
         Returns:
             A list of Iceberg version strings. No enabled match yields an empty
-            list, including the accepted snapshot case, so CI can skip the run.
+            list, so CI can skip the run.
 
         Raises:
-            MatrixError: The Spark version is malformed or is a snapshot in a
-                family covered by the matrix. Snapshots never select release entries.
+            MatrixError: The Spark version is not an exact release.
         """
-        # Spark master can use a snapshot in a family with no Iceberg integration.
-        # Preserve the callers' skip for that family without treating snapshots
-        # in covered families as their corresponding releases or silently skipping them.
-        if isinstance(spark_version, str) and spark_version.endswith("-SNAPSHOT"):
-            snapshot = SparkVersion.parse(spark_version[:-len("-SNAPSHOT")])
-            if not any(snapshot.family in support.spark_minor_to_patch
-                       for support in self.iceberg_supports.values()):
-                return []
         release = SparkVersion.parse(spark_version)
         return [
             str(iceberg_support.version)
@@ -555,14 +505,42 @@ class IcebergVersionMatrix:
         return requested_versions
 
 
+def _decode_json_value(value: Any, value_type: Any) -> Any:
+    """Decode the matrix's annotated field types, without coercing scalar values.
+
+    All matrix mappings are nonempty. Version-keyed mappings are serialized as
+    lists of records; the object hook has already decoded their nested records.
+    """
+    if get_origin(value_type) is Union:
+        # The only union field in the schema is Optional[str].
+        if value is None:
+            return None
+        value_type = next(kind for kind in get_args(value_type) if kind is not type(None))
+    if get_origin(value_type) is dict:
+        key_type, item_type = get_args(value_type)
+        if key_type in (SparkVersion, IcebergVersion):
+            if not isinstance(value, list) or not value:
+                raise MatrixError("version records must be a non-empty list")
+            return _index_records([_decode_json_value(item, item_type) for item in value])
+        if not isinstance(value, dict) or not value:
+            raise MatrixError("minimum test baselines must be a non-empty mapping")
+        return {_decode_json_value(key, key_type): _decode_json_value(item, item_type)
+                for key, item in value.items()}
+    if issubclass(value_type, _ReleaseVersion):
+        return value_type.parse(value)
+    if type(value) is not value_type:
+        raise MatrixError(f"expected {value_type.__name__}, got {value!r}")
+    return value
+
+
 def _decode_matrix_record(record: Dict[str, Any]) -> Union[
         Dict[str, Any], SparkSupport, IcebergSupport, IcebergVersionMatrix]:
     """JSON object hook constructing records from dataclass fields and JSON aliases.
 
-    The decoder visits nested objects first. Required fields and optional defaults
-    come from ``dataclasses.fields``; field metadata also specifies decoders for
-    typed versions and version-indexed collections. Other dictionaries remain
-    dictionaries until their enclosing record decodes them.
+    Field annotations specify types, dataclass defaults identify optional fields,
+    and metadata only supplies JSON aliases. Post-init hooks check cross-field
+    rules; scalar and collection type checks happen here once during decoding.
+    Unrecognized dictionaries are checked by their enclosing record or ``load``.
     """
     for record_type in (SparkSupport, IcebergSupport, IcebergVersionMatrix):
         record_fields = fields(record_type)
@@ -570,11 +548,8 @@ def _decode_matrix_record(record: Dict[str, Any]) -> Union[
         required = {item.metadata.get("json_name", item.name) for item in record_fields
                     if item.default is MISSING and item.default_factory is MISSING}
         if required <= record.keys() <= aliases.keys():
-            decoders: Dict[str, Callable[[Any], Any]] = {
-                item.name: item.metadata["decoder"] for item in record_fields
-                if "decoder" in item.metadata}
-            arguments = {aliases[name]: decoders[aliases[name]](value)
-                         if aliases[name] in decoders else value
+            annotations = get_type_hints(record_type)
+            arguments = {aliases[name]: _decode_json_value(value, annotations[aliases[name]])
                          for name, value in record.items()}
             return record_type(**arguments)
     return record
@@ -630,8 +605,8 @@ def command_list(args: argparse.Namespace) -> None:
         on stderr; it is successful and lets CI skip that Spark combination.
 
     Raises:
-        MatrixError: JSON schema validation fails or the Spark query is malformed,
-            including a snapshot in a family covered by the matrix.
+        MatrixError: JSON schema validation fails or the Spark query is not an
+            exact release.
         OSError, json.JSONDecodeError: The JSON cannot be read
             or parsed. ``main`` reports these failures and returns status 1.
     """
@@ -742,10 +717,9 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
     minimum test baselines, not upstream compatibility guarantees. Combinations
     below a baseline are intentionally excluded even when Maven packages them:
     Spark 3.5.0 and 3.5.4 select no versions; Spark 3.5.5 selects 1.9.2 but excludes
-    1.10.1. Spark 4.2.0 uses the stub and selects none. Well-formed snapshots in
-    families absent from the matrix, including 5.0.0-SNAPSHOT, also select none;
-    snapshots in covered families and malformed versions fail. Explicit requests
-    must satisfy both the baseline and packaging rules.
+    1.10.1. Spark 4.2.0 uses the stub and selects none. Queries accept exact
+    major.minor.patch releases only. Explicit requests must satisfy both the
+    baseline and packaging rules.
 
     Args:
         arguments: Command-line strings; None reads sys.argv[1:].

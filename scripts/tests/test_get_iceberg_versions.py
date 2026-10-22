@@ -158,27 +158,17 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
                 self.assertIn(f"No Iceberg versions selected for Spark {spark_version}", stderr)
                 self.assertIn("minimum-baseline and packaging test policy", stderr)
 
-    def test_cli_skips_snapshot_without_iceberg_family(self) -> None:
-        exit_code, stdout, stderr = self._run_cli("list", "--spark-version", "5.0.0-SNAPSHOT")
-        self.assertEqual(0, exit_code)
-        self.assertEqual("\n", stdout)
-        self.assertIn("No Iceberg versions selected for Spark 5.0.0-SNAPSHOT", stderr)
-
-    def test_cli_rejects_snapshot_in_matrix_family(self) -> None:
-        # Do not silently skip or select the corresponding release for a family
-        # whose Iceberg coverage is defined by the matrix.
-        exit_code, stdout, stderr = self._run_cli("list", "--spark-version", "3.5.6-SNAPSHOT")
-        self.assertEqual(1, exit_code)
-        self.assertEqual("", stdout)
-        self.assertIn("invalid version", stderr)
-
-    def test_cli_rejects_malformed_snapshot_versions(self) -> None:
-        for spark_version in ("5.0-SNAPSHOT", "5.0.0-SNAPSHOT-SNAPSHOT", "5.0.0-preview"):
-            with self.subTest(spark=spark_version):
-                exit_code, stdout, stderr = self._run_cli("list", "--spark-version", spark_version)
-                self.assertEqual(1, exit_code)
-                self.assertEqual("", stdout)
-                self.assertIn("invalid version", stderr)
+    def test_cli_requires_exact_spark_releases(self) -> None:
+        for spark_version in ("3.5", "3.5.6-SNAPSHOT", "5.0.0-SNAPSHOT", "5.0.0-preview"):
+            for command in ("list", "validate-requested"):
+                with self.subTest(spark=spark_version, command=command):
+                    arguments = ["--spark-version", spark_version]
+                    if command == "validate-requested":
+                        arguments += ["--requested-versions", "1.10.1"]
+                    exit_code, stdout, stderr = self._run_cli(command, *arguments)
+                    self.assertEqual(1, exit_code)
+                    self.assertEqual("", stdout)
+                    self.assertIn("invalid version", stderr)
 
     def test_cli_validates_requested_versions(self) -> None:
         exit_code, stdout, stderr = self._run_cli(
@@ -284,6 +274,17 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
                            MATRIX_READER.IcebergVersion.parse("1.9.2"))
         self.assertNotEqual(MATRIX_READER.SparkVersion.parse("1.2.3"),
                             MATRIX_READER.IcebergVersion.parse("1.2.3"))
+
+    def test_version_construction_requires_nonnegative_integer_components(self) -> None:
+        for version_type in (MATRIX_READER.SparkVersion, MATRIX_READER.IcebergVersion):
+            for part in (-1, True, 1.5, "1"):
+                for index in range(3):
+                    parts: List[Any] = [1, 2, 3]
+                    parts[index] = part
+                    with self.subTest(kind=version_type, parts=parts):
+                        with self.assertRaisesRegex(
+                                MATRIX_READER.MatrixError, "invalid release components"):
+                            version_type(*parts)
 
     def test_version_parsers_reject_non_release_strings(self) -> None:
         for version_type in (MATRIX_READER.SparkVersion, MATRIX_READER.IcebergVersion):
@@ -419,6 +420,56 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
                 entry["unexpected"] = True
                 with self.assertRaises(MATRIX_READER.MatrixError):
                     self._load_document(document)
+
+    def test_json_annotations_reject_incorrect_scalar_types(self) -> None:
+        cases: Tuple[Tuple[str, Any, str], ...] = (
+            ("version", 351, "invalid version"),
+            ("version", None, "invalid version"),
+            ("supported", "false", "expected bool"),
+            ("supported", 1, "expected bool"),
+            ("supported", None, "expected bool"),
+            ("reason", False, "expected str"),
+            ("reason", [], "expected str"),
+        )
+        for name, value, diagnostic in cases:
+            with self.subTest(field=name, value=value):
+                document = copy.deepcopy(self.document)
+                document["iceberg_versions"][0]["spark_versions"][0][name] = value
+                with self.assertRaisesRegex(MATRIX_READER.MatrixError, diagnostic):
+                    self._load_document(document)
+
+    def test_json_annotations_require_nonempty_collections_of_the_declared_type(self) -> None:
+        cases: Tuple[Tuple[str, Any], ...] = (
+            ("iceberg_versions", []),
+            ("iceberg_versions", {}),
+            ("iceberg_versions", ["1.6.1"]),
+            ("spark_versions", []),
+            ("spark_versions", {}),
+            ("spark_versions", ["3.5.1"]),
+            ("spark_versions", [self.document["iceberg_versions"][0]]),
+            ("upstream_minimums", {}),
+            ("upstream_minimums", []),
+            ("upstream_minimums", {"3.5": 351}),
+        )
+        for name, value in cases:
+            with self.subTest(field=name, value=value):
+                document = copy.deepcopy(self.document)
+                record = document if name == "iceberg_versions" else document["iceberg_versions"][0]
+                record[name] = value
+                with self.assertRaises(MATRIX_READER.MatrixError):
+                    self._load_document(document)
+
+    def test_json_records_enforce_cross_field_rules(self) -> None:
+        for supported, reason in ((True, "excluded"), (False, None), (False, "  ")):
+            with self.subTest(supported=supported, reason=reason):
+                document = copy.deepcopy(self.document)
+                document["iceberg_versions"][0]["spark_versions"][0].update(
+                    supported=supported, reason=reason)
+                with self.assertRaisesRegex(MATRIX_READER.MatrixError, "reason"):
+                    self._load_document(document)
+        self.document["iceberg_versions"][0]["upstream_minimums"] = {"3.5": "4.0.0"}
+        with self.assertRaisesRegex(MATRIX_READER.MatrixError, "does not belong to Spark family"):
+            self._load_document(self.document)
 
     def test_rejects_release_profile_without_declared_spark_shim(self) -> None:
         tree = ET.parse(self.pom_path)
