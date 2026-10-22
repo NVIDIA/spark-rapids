@@ -25,7 +25,6 @@ cache_exclude_status = "403,429,500.."
 
 exclude = [
   '^https://github\.com/NVIDIA/(spark-rapids|cudf-spark)/(pull|issues)/',
-  '(^|/)docs/archives',
   '^http://localhost',
   '^https://www\.nvidia\.com/en-us/security/pgp-key',
   '^https://repo1\.maven\.org/maven2/com/nvidia/rapids-4-spark_2\.',
