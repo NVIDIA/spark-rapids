@@ -385,6 +385,9 @@ object GpuBroadcastNestedLoopJoinExecBase {
           degenerateLeftOuterJoinIterator(stream, streamAttributes, builtBatch,
             boundCondition.get)
         } else if (builtBatch.numCols == 0 || streamAttributes.isEmpty) {
+          // With no columns on one side, the condition reads only the other side, so the
+          // degenerate path tests each of its rows once. ConditionalNestedLoopJoinIterator tests
+          // every pair, and cannot take a batch with no columns.
           degenerateJoinIterator(joinType, buildSide, builtBatch, stream, streamAttributes,
             targetSize, sizeEstimateThreshold, boundCondition.get, opTime, joinTime)
         } else {
@@ -979,18 +982,25 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val buildTime = gpuLongMetric(BUILD_TIME)
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     // The output rows for each stream row. Only an existence join keeps every stream row
-    // whatever the build holds, so the others read the build row count.
+    // whatever the build holds, so the others read the build row count. It is lazy, so each
+    // task computes it when it first needs it.
     lazy val rowsPerStreamRow: Long = {
       lazy val buildRows = computeBuildRowCount(relation, buildTime, buildDataSize)
       joinType match {
         case _: ExistenceJoin => 1
+        // With no condition, semi keeps a stream row when the build has any row, and anti
+        // keeps it when the build has none.
         case LeftSemi => if (buildRows > 0) 1 else 0
         case LeftAnti => if (buildRows > 0) 0 else 1
+        // A stream row matches every build row. Over an empty build it still appears once,
+        // padded with nulls.
         case LeftOuter | RightOuter => math.max(buildRows, 1)
         case _ => buildRows
       }
     }
 
+    // A count needs no GPU memory, so the task gives up the GPU semaphore after each stream
+    // batch. divideIntoBatches takes it again before it hands a batch downstream.
     def getRowCountAndClose(cb: ColumnarBatch): Long = {
       val ret = cb.numRows()
       cb.close()
@@ -1003,7 +1013,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val leftExistence = joinType == LeftSemi || joinType == LeftAnti
     val counts = streamed.executeColumnar().mapPartitions { iter =>
       // A semi or anti join that keeps no stream row skips the stream, as leftExistenceJoin
-      // does. Other joins still compute it, as Spark does.
+      // does. Other joins still compute it, as Spark does, so an error that the stream raises
+      // still fails the query.
       if (leftExistence && rowsPerStreamRow == 0) {
         Iterator.empty
       } else {
