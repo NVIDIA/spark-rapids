@@ -453,7 +453,6 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
         conf=updated_conf)
 
 
-@approximate_float
 @pytest.mark.parametrize('data_type', [FloatType(), DoubleType()], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 def test_json_read_extreme_exponents(spark_tmp_path, data_type, v1_enabled_list):
@@ -462,8 +461,8 @@ def test_json_read_extreme_exponents(spark_tmp_path, data_type, v1_enabled_list)
         '{"numbers":[-630111.628E-58858,630111.628E58858]}',
         '{"numbers":[-1E5000,1E5000,-1E-5000,1E-5000]}',
     ]
-    with open(data_path, 'w') as data_file:
-        data_file.write('\n'.join(records))
+    with_cpu_session(lambda spark: spark.createDataFrame([(line,) for line in records], ['value'])
+                     .coalesce(1).write.text(data_path))
 
     schema = StructType([StructField('numbers', ArrayType(data_type))])
     conf = copy_and_update(
