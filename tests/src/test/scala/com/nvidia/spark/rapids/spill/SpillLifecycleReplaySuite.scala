@@ -89,7 +89,8 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     }
   }
 
-  private class PausingFailingHostStore extends SpillableHostStore(Some(1L << 20)) {
+  private class PausingFailingHostStore(maxSizeInBytes: Long)
+    extends SpillableHostStore(Some(maxSizeInBytes)) {
     val copyStarted = new CountDownLatch(1)
     val resumeCopy = new CountDownLatch(1)
 
@@ -632,31 +633,99 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     assertResult(0)(deviceStore.numHandles)
   }
 
-  private def runFailedSpillClose(
+  private case class FailedSpill(
       handle: SpillableHandle,
       started: CountDownLatch,
       resume: CountDownLatch,
-      released: () => Boolean): Unit = {
+      released: () => Boolean,
+      verifyKept: () => Unit,
+      stagingRemoved: () => Boolean = () => true)
+
+  private def failingHostCopy(hostLimit: Long, create: () => ReplayHandle): FailedSpill = {
+    val hostStore = new PausingFailingHostStore(hostLimit)
+    val diskStore = new RecordingDiskStore
+    SpillFramework.stores.hostStore = hostStore
+    SpillFramework.stores.diskStore = diskStore
+    val replay = create()
+    FailedSpill(replay.handle, hostStore.copyStarted, hostStore.resumeCopy,
+      () => replay.handle.dev.isEmpty, replay.verify,
+      () => Option(diskStore.spillFile).forall(!_.exists()))
+  }
+
+  private def failingDiskWrite(
+      create: () => HostSpillableHandle[_ <: AutoCloseable],
+      verify: HostSpillableHandle[_ <: AutoCloseable] => Unit): FailedSpill = {
+    val diskStore = new PausingFailingDiskStore
+    SpillFramework.stores.diskStore = diskStore
+    val handle = create()
+    FailedSpill(handle, diskStore.writeStarted, diskStore.resumeWrite,
+      () => handle.host.isEmpty, () => verify(handle))
+  }
+
+  private val failedSpillCases: Seq[(String, () => FailedSpill)] =
+    Seq[(String, () => FailedSpill)]("device buffer" -> (() =>
+      failingHostCopy(1L << 20, () => {
+        val handle = createHandle()
+        ReplayHandle(handle, () => handle.host.isDefined,
+          () => withResource(handle.materialize())(assertContents))
+      }))) ++
+    siblingHandles.map { handleCase =>
+      val hostLimit = if (handleCase.diskBacked) handleCase.hostLimit else 1L << 20
+      handleCase.name -> (() => failingHostCopy(hostLimit, handleCase.create))
+    } ++
+    Seq[(String, () => FailedSpill)](
+      "host buffer" -> (() => failingDiskWrite(() =>
+        closeOnExcept(HostMemoryBuffer.allocate(expectedBytes.length)) { buffer =>
+          buffer.setBytes(0, expectedBytes, 0, expectedBytes.length)
+          SpillableHostBufferHandle(buffer)
+        },
+        handle => withResource(handle.asInstanceOf[SpillableHostBufferHandle].materialize()) {
+          buffer =>
+            val actual = new Array[Byte](expectedBytes.length)
+            buffer.getBytes(actual, 0, 0, expectedBytes.length)
+            assert(actual.sameElements(expectedBytes))
+        })),
+      "host columnar batch" -> (() => {
+        val (batch, dataTypes) = buildHostBatch()
+        val numRows = batch.numRows()
+        failingDiskWrite(() => SpillableHostColumnarBatchHandle(batch),
+          handle => withResource(handle.asInstanceOf[SpillableHostColumnarBatchHandle]
+              .materialize(dataTypes)) { materialized =>
+            assertResult(numRows)(materialized.numRows())
+          })
+      }))
+
+  private def runFailedSpill(spill: FailedSpill, closeDuringSpill: Boolean): Unit = {
+    val handle = spill.handle
     val executor = Executors.newSingleThreadExecutor()
     try {
       val spilled = executor.submit(new Callable[Long] {
         override def call(): Long = handle.spill()
       })
-      await(started)
-      handle.close()
-      resume.countDown()
+      await(spill.started)
+      if (closeDuringSpill) handle.close()
+      spill.resume.countDown()
       val failure = intercept[ExecutionException] {
         spilled.get(timeoutSeconds, TimeUnit.SECONDS)
       }
       assert(failure.getCause.getMessage.startsWith("injected"))
       assert(!handle.spilling)
-      assert(released())
-      assert(!handle.spillable)
+      assert(spill.stagingRemoved())
+      if (closeDuringSpill) {
+        assert(spill.released())
+        assert(!handle.spillable)
+      } else {
+        assert(!spill.released())
+        assert(handle.spillable)
+        spill.verifyKept()
+        handle.close()
+        assert(spill.released())
+      }
       assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
       assertResult(0)(SpillFramework.stores.hostStore.numHandles)
       assertResult(0)(SpillFramework.stores.diskStore.numHandles)
     } finally {
-      resume.countDown()
+      spill.resume.countDown()
       executor.shutdown()
       if (!executor.awaitTermination(timeoutSeconds, TimeUnit.SECONDS)) {
         executor.shutdownNow()
@@ -665,42 +734,48 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     }
   }
 
-  test("device buffer completes a close deferred by a failed spill") {
-    val hostStore = new PausingFailingHostStore
-    SpillFramework.stores.hostStore = hostStore
-    val handle = createHandle()
-    runFailedSpillClose(handle, hostStore.copyStarted, hostStore.resumeCopy,
-      () => handle.dev.isEmpty)
-  }
+  for ((name, failedSpill) <- failedSpillCases) {
+    test(s"$name completes a close deferred by a failed spill") {
+      runFailedSpill(failedSpill(), closeDuringSpill = true)
+    }
 
-  for (handleCase <- siblingHandles if !handleCase.diskBacked) {
-    test(s"${handleCase.name} completes a close deferred by a failed spill") {
-      val hostStore = new PausingFailingHostStore
-      SpillFramework.stores.hostStore = hostStore
-      val replay = handleCase.create()
-      runFailedSpillClose(replay.handle, hostStore.copyStarted, hostStore.resumeCopy,
-        () => replay.handle.dev.isEmpty)
+    test(s"$name keeps its data after a failed spill") {
+      runFailedSpill(failedSpill(), closeDuringSpill = false)
     }
   }
 
-  test("host buffer completes a close deferred by a failed disk spill") {
-    val diskStore = new PausingFailingDiskStore
-    SpillFramework.stores.diskStore = diskStore
-    val handle = closeOnExcept(HostMemoryBuffer.allocate(expectedBytes.length)) { buffer =>
-      buffer.setBytes(0, expectedBytes, 0, expectedBytes.length)
-      SpillableHostBufferHandle(buffer)
-    }
-    runFailedSpillClose(handle, diskStore.writeStarted, diskStore.resumeWrite,
-      () => handle.host.isEmpty)
-  }
+  test("failed spill does not repeat a close its block already completed") {
+    var closes = 0
+    val handle = new DeviceStoreHandle {
+      override val approxSizeInBytes: Long = 1L
 
-  test("host columnar batch completes a close deferred by a failed disk spill") {
-    val diskStore = new PausingFailingDiskStore
-    SpillFramework.stores.diskStore = diskStore
-    val (batch, _) = buildHostBatch()
-    val handle = SpillableHostColumnarBatchHandle(batch)
-    runFailedSpillClose(handle, diskStore.writeStarted, diskStore.resumeWrite,
-      () => handle.host.isEmpty)
+      override def spill(): Long = {
+        synchronized {
+          spilling = true
+        }
+        executeSpill {
+          synchronized {
+            spilling = false
+          }
+          close()
+          throw new IllegalStateException("injected failure after publication")
+        }
+      }
+
+      override def releaseSpilled(): Unit = ()
+
+      override private[spill] def doClose(): Unit = {
+        closes += 1
+        SpillFramework.removeFromDeviceStore(this)
+      }
+    }
+    SpillFramework.stores.deviceStore.track(handle)
+    intercept[IllegalStateException] {
+      handle.spill()
+    }
+    assert(!handle.spilling)
+    assertResult(1)(closes)
+    assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
   }
 
   test("failed spill keeps its error primary when the deferred close fails") {

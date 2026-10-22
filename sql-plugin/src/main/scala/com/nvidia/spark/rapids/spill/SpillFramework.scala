@@ -195,9 +195,9 @@ trait SpillableHandle extends StoreHandle with Logging {
    * thread will win and perform the spilling, and the other thread will make
    * no modification.
    *
-   * If the disk is full, or a spill failure occurs otherwise (eg. device issues),
-   * we make no attempt to handle it or restore state, as we expect to be in a non-recoverable
-   * state at the task/executor level.
+   * If the spill fails (e.g. the disk is full or a device error occurs), the exception
+   * propagates to the caller. The handle keeps its data and can be spilled again, unless it
+   * was closed during the spill, in which case the failed spill completes the close.
    *
    * @note The size returned from this method is only used by the spill framework
    *       to track the approximate size. It should just return `approxSizeInBytes`, as
@@ -231,16 +231,10 @@ trait SpillableHandle extends StoreHandle with Logging {
   private[spill] def doClose(): Unit
 
   /**
-   * Whether a failed spill must complete a `close` deferred to it. Called while holding this
-   * handle's lock, after `spilling` is reset.
-   */
-  protected def closeAfterFailedSpill: Boolean = closed
-
-  /**
    * Executes a spill operation while handling exceptions.
    * If an exception occurs during spilling (e.g. InterruptedException), this method
    * catches it, logs a warning, resets the spilling state to false, completes any close
-   * deferred during the spill, and rethrows the exception.
+   * deferred to a spill that had not yet released `spilling`, and rethrows the exception.
    *
    * Subclasses override this method to wrap the spill operation with appropriate metrics tracking:
    * - DeviceSpillableHandle tracks spillToHostTime and memory bytes spilled
@@ -258,8 +252,10 @@ trait SpillableHandle extends StoreHandle with Logging {
         case e: Throwable =>
           logWarning(s"Failed to spill $this", e)
           val closeNow = synchronized {
+            // A block that already reset spilling has also handled any deferred close.
+            val ownsSpill = spilling
             spilling = false
-            closeAfterFailedSpill
+            ownsSpill && closed
           }
           if (closeNow) {
             try doClose() catch {
@@ -615,11 +611,10 @@ class SharedRecomputableHandle[T <: AutoCloseable] private[spill] (
     // Logically evict the object under the handle lock but do not free it yet.
     // The thread that spills removes dev and sets spilling to true so that only
     // one thread spills.
-    var evicted: Option[T] = None
     val thisThreadSpills = synchronized {
       if (!closed && dev.isDefined && pinCount == 0 && !spilling) {
         spilling = true
-        evicted = dev
+        pendingRelease = pendingRelease ++ dev.toSeq
         dev = None
         SpillFramework.removeFromDeviceStore(this)
         true
@@ -629,22 +624,8 @@ class SharedRecomputableHandle[T <: AutoCloseable] private[spill] (
     }
     // spilling remains true until releaseSpilled() so that a newly rebuilt dev
     // isn't spilled before the pendingRelease passes through post-spill device sync.
-    if (thisThreadSpills) {
-      executeSpill {
-        synchronized {
-          pendingRelease = pendingRelease ++ evicted.toSeq
-        }
-        0L
-      }
-      approxSizeInBytes
-    } else {
-      0L
-    }
+    if (thisThreadSpills) approxSizeInBytes else 0L
   }
-
-  // Same condition as releaseSpilled; with a lease outstanding, releaseLease closes instead.
-  override protected def closeAfterFailedSpill: Boolean =
-    closed && pinCount == 0 && !rebuilding
 
   override def releaseSpilled(): Unit = {
     // For a recomputable handle simply clear the release queue,
