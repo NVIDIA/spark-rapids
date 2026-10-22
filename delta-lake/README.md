@@ -22,6 +22,8 @@ and directory contains the corresponding support code.
 | 4.2.0              | Spark 4.0.1, 4.1.1 | `delta-42x`     |
 | 4.3.0              | Spark 4.0.1, 4.1.1 | `delta-43x`     |
 | Databricks 14.3    | Databricks 14.3 | `delta-spark350db143` |
+| Databricks 17.3    | Databricks 17.3 | `delta-spark400db173` |
+| Databricks 18.3 reader subset | Databricks 18.3 | `delta-spark410db183` (standalone reader build; release profile uses `delta-stub`) |
 
 Delta Lake is not supported on all Spark versions, and for Spark versions where it is not
 supported the `delta-stub` project is used.
@@ -45,12 +47,29 @@ The following table details how the common subdirectories map to Delta Lake vers
 | `common/src/main/databricks` | Delta Lake on all Databricks platforms     |
 | `common/src/main/delta-io`   | Delta Lake on all non-Databricks platforms |
 | `delta-lake/src/main/delta*` | Directories supporting various version ranges |
-| `common/src/main/db-350db143-400db173/scala` | DBR 14.3 and 17.3 table-creation and write bases |
-| `common/src/main/db-350db143-410db183/scala` | Compatible sources for DBR 14.3 and 17.3; DBR 18.3 consumption follows in a separate PR |
-| `common/src/main/db-400db173-410db183/{scala,java}` | DBR 17.3 sources prepared for sharing with DBR 18.3 in a separate PR |
+| `common/src/main/db-350db143-400db173/scala` | DBR 14.3 and 17.3 |
+| `common/src/main/db-350db143-410db183/scala` | DBR 14.3 and 17.3; also registered by DBR 18.3 (see below) |
+| `common/src/main/db-400db173-410db183/{scala,java}` | DBR 17.3 and the DBR 18.3 reader subset |
 
-A module consuming `db-400db173-410db183` must also supply compatible implementations of
-`GpuCreateDeltaTableCommand`, `GpuDeltaFileFormatWriter`, `GpuOptimisticTransaction`,
-`GpuOptimisticTransactionBase`, and `GpuWriteIntoDeltaBase`, either from its own sources or
-another selected common directory. This PR wires the new directories into DBR 14.3/17.3;
-the DBR 18.3 release profile continues to build the Delta stub.
+These directories provide source roots, not independently built modules. The full
+`db-400db173-410db183` source set requires `db-350db143-410db183`; their command and
+base-class implementations reference one another.
+
+- `db-400db173-410db183` needs compatible `GpuDeltaFileFormatWriter`,
+  `GpuOptimisticTransaction`, `GpuWriteIntoDeltaBase`, and `GpuDeltaParquetFileFormat`
+  implementations. Its commands use `GpuDeleteCommandBase`, `GpuUpdateCommandBase`,
+  `GpuOptimizeExecutorBase`, and `PartitionedBin` from `db-350db143-410db183`.
+- `db-350db143-410db183` needs compatible `GpuCreateDeltaTableCommand` and
+  `GpuOptimisticTransactionBase` implementations, together with `GpuDeleteCommand`,
+  `GpuWriteIntoDelta`, and `UpdateCommandShims` from `db-400db173-410db183`.
+
+DBR 17.3 and 18.3 share the native deletion-vector reader core, descriptor-based bitmap
+utilities, and reader eligibility helpers. DBR 17.3 derives low-shuffle discovery settings
+from scan options. The DBR 18.3 eligibility check marks scans with low-shuffle MERGE options
+for CPU fallback. The shared bitmap lookup prefers row-index providers and keeps descriptor
+objects intact, avoiding the string encoding limit for large temporary deletion vectors.
+
+The DBR 18.3 module explicitly compiles only its reader dependency subset. Its registered source
+roots do not imply that every command or write base in those roots is compiled. In particular,
+no files from `db-350db143-410db183` currently match the reader allowlist. The DBR 18.3
+release profile still builds the Delta stub; provider registration and write support are pending.
