@@ -371,6 +371,10 @@ object GpuBroadcastNestedLoopJoinExecBase {
       if (joinType.isInstanceOf[ExistenceJoin]) {
         if (builtBatch.numCols == 0) {
           degenerateExistsJoinIterator(stream, builtBatch, boundCondition.get)
+        } else if (streamAttributes.isEmpty && buildSide == GpuBuildRight) {
+          // Only a build on the right makes the stream the outer side.
+          degenerateJoinIterator(joinType, buildSide, builtBatch, stream, streamAttributes,
+            targetSize, sizeEstimateThreshold, boundCondition.get, opTime, joinTime)
         } else {
           val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
           new ConditionalNestedLoopExistenceJoinIterator(
@@ -555,6 +559,18 @@ object GpuBroadcastNestedLoopJoinExecBase {
             } else {
               Iterator.empty
             }
+          }
+        }
+      case (ExistenceJoin(_), true) =>
+        // Every stream row exists when some build row meets the condition.
+        val exists = withResource(filterAndClose(builtBatch, boundCondition))(_.numRows > 0)
+        stream.map { scb =>
+          withResource(scb) { _ =>
+            val existsCol: ColumnVector = withResource(Scalar.fromBool(exists)) { existsScalar =>
+              GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, scb.numRows),
+                BooleanType)
+            }
+            new ColumnarBatch(Array(existsCol), scb.numRows)
           }
         }
       case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
