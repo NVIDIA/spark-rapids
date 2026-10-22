@@ -828,6 +828,27 @@ def test_left_broadcast_nested_loop_join_condition_missing_count(data_gen, join_
         return broadcast(left).join(right, how=join_type).selectExpr('COUNT(*)')
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
+# A join with no condition and no output columns only counts rows. With AQE off, Spark cannot see
+# that an RDD-backed build is empty, so the join must count it.
+@pytest.mark.parametrize('join_type,build_side', [
+    ('Inner', 'right'), ('Inner', 'left'), ('LeftSemi', 'right'), ('LeftAnti', 'right'),
+    ('LeftOuter', 'right'), ('RightOuter', 'left')], ids=idfn)
+@pytest.mark.parametrize('build_length', [0, 30], ids=idfn)
+def test_broadcast_nested_loop_join_condition_missing_count_empty_build(
+        join_type, build_side, build_length):
+    def do_join(spark):
+        stream = gen_df(spark, [('a', int_gen)], length=100, num_slices=1)
+        build = gen_df(spark, [('b', int_gen)], length=build_length, num_slices=1)
+        if build_side == 'right':
+            joined = stream.join(broadcast(build), how=join_type)
+        else:
+            joined = broadcast(build).join(stream, how=join_type)
+        return joined.agg(f.count(lit(1)))
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes='GpuBroadcastNestedLoopJoinExec',
+        conf={'spark.sql.adaptive.enabled': 'false'})
+
 @allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'GreaterThanOrEqual', *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -1129,10 +1150,6 @@ def test_broadcast_nested_loop_join_rows_only_build(build_length, batch_size):
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
 def test_broadcast_nested_loop_join_one_sided_sequence_condition(
         join_type, build_side, predicate_side, build_length, batch_size):
-    if join_type in ['LeftSemi', 'LeftAnti'] and predicate_side == 'right' and \
-            not is_spark_400_or_later():
-        pytest.skip('Before Spark 4.0 these cases plan an unconditional count-only join, whose GPU '
-                    'row count ignores an empty build')
     def do_join(spark):
         values = SetValuesGen(IntegerType(), [None, 0, 5, 6, 9])
         left = gen_df(spark, [('a', values)],
