@@ -79,7 +79,7 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
     GpuLiteral(5, IntegerType))
   private val existsAttr = AttributeReference("exists", BooleanType, nullable = false)()
 
-  // The join types and build sides the GPU plans as a conditional nested loop join
+  // The join types and build sides that nestedLoopJoin handles with a condition
   private val joinShapes = Seq[(String, JoinType, GpuBuildSide)](
     ("Inner", Inner, GpuBuildLeft),
     ("Inner", Inner, GpuBuildRight),

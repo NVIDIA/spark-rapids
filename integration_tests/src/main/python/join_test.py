@@ -25,7 +25,7 @@ from data_gen import *
 from marks import (allow_non_gpu, disable_ansi_mode, ignore_order, incompat, shuffle_test,
                    validate_execs_in_gpu_plan)
 from spark_session import (with_cpu_session, is_databricks_runtime, is_spark_400_or_later,
-                           is_spark_411_or_later, spark_version)
+                           is_before_spark_340, is_spark_411_or_later, spark_version)
 from src.main.python.spark_session import with_gpu_session
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -1120,6 +1120,7 @@ def test_broadcast_nested_loop_join_rows_only_build(build_length, batch_size):
 # Spark 4.0 keeps a predicate that can throw, such as sequence, in the join condition. A predicate
 # that reads one side then leaves the other side with rows and no columns.
 @ignore_order(local=True)
+@allow_non_gpu(*non_utc_allow)
 @pytest.mark.parametrize('join_type,build_side', [
     ('Inner', 'left'), ('Inner', 'right'), ('LeftSemi', 'right'), ('LeftAnti', 'right'),
     ('LeftOuter', 'right'), ('RightOuter', 'left')], ids=idfn)
@@ -1130,8 +1131,8 @@ def test_broadcast_nested_loop_join_one_sided_sequence_condition(
         join_type, build_side, predicate_side, build_length, batch_size):
     if join_type in ['LeftSemi', 'LeftAnti'] and predicate_side == 'right' and \
             not is_spark_400_or_later():
-        pytest.skip('Before Spark 4.0 the predicate moves below the join, so these cases plan '
-                    'an unconditional join with no output columns')
+        pytest.skip('Before Spark 4.0 these cases plan an unconditional count-only join, whose GPU '
+                    'row count ignores an empty build')
     def do_join(spark):
         values = SetValuesGen(IntegerType(), [None, 0, 5, 6, 9])
         left = gen_df(spark, [('a', values)],
@@ -1144,7 +1145,7 @@ def test_broadcast_nested_loop_join_one_sided_sequence_condition(
             right = broadcast(right)
         name = 'a' if predicate_side == 'left' else 'b'
         side = col(name)
-        joined = left.join(right, f.size(f.sequence(side, side + 3, lit(1))) > side, join_type)
+        joined = left.join(right, f.size(f.sequence(side, lit(9), lit(1))) > side, join_type)
         # LeftSemi and LeftAnti return only the left columns.
         return joined.select([c for c in joined.columns if c == name])
     assert_cpu_and_gpu_are_equal_collect_with_capture(
@@ -1441,7 +1442,10 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
 # Spark 4.0 keeps a sequence predicate in an existence join's condition too. With the outer value
 # folded to a literal, the condition reads only the subquery side, so the stream has no columns.
 @ignore_order(local=True)
-@pytest.mark.parametrize('k', [0, 5], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.skipif(is_before_spark_340(),
+                    reason='EXISTS in a select list needs Spark 3.4, SPARK-30220')
+@pytest.mark.parametrize('k', [0, 40], ids=idfn)
 def test_broadcast_nested_loop_existence_join_one_sided_sequence_condition(
         spark_tmp_table_factory, k):
     outer_table_name = spark_tmp_table_factory.get()
@@ -1449,11 +1453,10 @@ def test_broadcast_nested_loop_existence_join_one_sided_sequence_condition(
 
     def do_join(spark):
         spark.range(0, 100).createOrReplaceTempView(outer_table_name)
-        spark.range(0, 30).selectExpr('IF(id % 5 = 0, NULL, CAST(id AS INT)) AS b') \
-            .createOrReplaceTempView(sub_table_name)
+        spark.range(0, 30).selectExpr('CAST(id AS INT) AS b').createOrReplaceTempView(sub_table_name)
         return spark.sql(
             'SELECT EXISTS (SELECT 1 FROM {} AS s '
-            'WHERE size(sequence(s.b, s.b + 3, 1)) > s.b + k) AS e '
+            'WHERE size(sequence(s.b, 30, 1)) > s.b + k) AS e '
             'FROM (SELECT {} AS k FROM {})'.format(sub_table_name, k, outer_table_name))
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         do_join,
