@@ -215,9 +215,9 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
 class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = {
-    // Spark 4 marks cached AQE plans columnar and can insert a row-to-columnar transition.
-    // Neither Spark's nor the GPU converter supports UDTs, so keep them on the row cache path.
-    !VersionUtils.isSpark400OrLater || !schema.exists { attribute =>
+    // Spark 4 and Databricks mark cached AQE plans columnar and can insert a row-to-columnar
+    // transition. Neither Spark's nor the GPU converter supports UDTs, so use the row cache path.
+    (!VersionUtils.isSpark400OrLater && !VersionUtils.isDataBricks) || !schema.exists { attribute =>
       TrampolineUtil.dataTypeExistsRecursively(attribute.dataType,
         _.isInstanceOf[UserDefinedType[_]])
     }

@@ -155,7 +155,7 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("PCBS columnar input avoids UDT row transitions on Spark 4") {
+  test("PCBS columnar input avoids UDT row transitions on Spark 4 and Databricks") {
     val ser = new ParquetCachedBatchSerializer
     val udt = new TestPrimitiveUDT
     val udtTypes = Seq(udt, ArrayType(udt),
@@ -164,7 +164,8 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
       ArrayType(StructType(Seq(StructField("value", MapType(StringType, udt))))))
     udtTypes.foreach { dataType =>
       val schema = Seq(AttributeReference("value", dataType)())
-      assert(ser.supportsColumnarInput(schema) === !VersionUtils.isSpark400OrLater,
+      val supportsUdtInput = !VersionUtils.isSpark400OrLater && !VersionUtils.isDataBricks
+      assert(ser.supportsColumnarInput(schema) === supportsUdtInput,
         s"Unexpected columnar input support for $dataType")
     }
     val ordinarySchema = Seq(AttributeReference("value",
