@@ -35,6 +35,7 @@ import org.scalatestplus.mockito.MockitoSugar
 import org.apache.spark.{FetchFailed, SparkConf, TaskContext}
 import org.apache.spark.shuffle.{FetchFailedException, ShuffleReadMetricsReporter}
 import org.apache.spark.shuffle.rapids.ShuffleOutputGoneException
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockId}
@@ -101,12 +102,12 @@ class RapidsCachingReaderSuite extends RmmSparkRetrySuiteBase with MockitoSugar 
       catalog.removeCachedHandles(ids)
       val context = TaskContext.empty()
       // Spark reports a fetch failure only when the context of the thread that built it has it
-      TaskContext.setTaskContext(context)
+      TrampolineUtil.setTaskContext(context)
       try {
         val e = fetchFailure(read(catalog, context))
         assert(context.fetchFailed.exists(_ eq e), context.fetchFailed)
       } finally {
-        TaskContext.unset()
+        TrampolineUtil.unsetTaskContext()
       }
     }
   }
@@ -170,6 +171,7 @@ class RapidsCachingReaderSuite extends RmmSparkRetrySuiteBase with MockitoSugar 
       outcome.get match {
         case Failure(e: FetchFailedException) =>
           assertOutputGone(e)
+          assert(e.getCause.getCause.isInstanceOf[IllegalStateException], e.getCause.getCause)
         case other => fail(s"the read ended in $other")
       }
     }

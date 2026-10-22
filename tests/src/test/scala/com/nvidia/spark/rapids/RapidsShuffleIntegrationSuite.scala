@@ -404,6 +404,11 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
       .set("spark.shuffle.manager", shuffleManagerClass)
       .set("spark.rapids.shuffle.mode", "UCX")
       .set("spark.sql.adaptive.enabled", "false")
+      // Spark 4.1+ removes a classic query's shuffles in testing mode, and Spark 4.2 turns on
+      // checksums that the GPU shuffle does not compute
+      .set("spark.sql.classic.shuffleDependency.fileCleanup.enabled", "false")
+      .set(RowBasedShuffleChecksumConf.ChecksumEnabledKey, "false")
+      .set(RowBasedShuffleChecksumConf.ChecksumMismatchFullRetryKey, "false")
     spark = SparkSession.builder().config(conf).getOrCreate()
     val taskEnds = new ConcurrentLinkedQueue[SparkListenerTaskEnd]()
     spark.sparkContext.addSparkListener(new SparkListener {

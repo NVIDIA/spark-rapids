@@ -214,7 +214,7 @@ class ShuffleBufferCatalogSuite
       assert(GpuCompressedColumnVector.isBatchCompressed(batches.head))
       val column = batches.head.column(0).asInstanceOf[GpuCompressedColumnVector]
       val meta = column.getTableMeta
-      withResource(codec.createBatchDecompressor(100 * 1024 * 1024L, Cuda.DEFAULT_STREAM)) {
+      withResource(codec.createBatchDecompressor(0, Cuda.DEFAULT_STREAM)) {
         decompressor =>
           // the decompressor closes the buffer it is given
           column.getTableBuffer.incRefCount()
