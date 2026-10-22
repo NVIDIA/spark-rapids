@@ -565,7 +565,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
         // Every stream row exists when some build row meets the condition.
         val exists = withResource(filterAndClose(builtBatch, boundCondition))(_.numRows > 0)
         stream.map { scb =>
-          withResource(scb) { _ =>
+          withRetryNoSplit(scb) { _ =>
             val existsCol: ColumnVector = withResource(Scalar.fromBool(exists)) { existsScalar =>
               GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, scb.numRows),
                 BooleanType)
