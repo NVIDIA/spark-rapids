@@ -61,6 +61,13 @@ def _lacks_null_result_row(spark):
     return all(field.getName() != "nullResultRow" for field in expr_class.getDeclaredFields())
 
 
+def _honors_enums_as_ints(spark):
+    """Spark 3.4 has no enums.as.ints and always decodes enums as strings."""
+    options_class = spark.sparkContext._jvm.org.apache.spark.util.Utils.classForName(
+        "org.apache.spark.sql.protobuf.utils.ProtobufOptions", True, False)
+    return any(field.getName() == "enumsAsInts" for field in options_class.getDeclaredFields())
+
+
 def _has_permissive_null_row_fix():
     """Whether Spark has SPARK-46275 (3.4.3, 3.5.1): malformed PERMISSIVE rows become null."""
     if not is_spark_protobuf_available():
@@ -762,7 +769,8 @@ def test_from_protobuf_default_values(local_tmp_path, from_protobuf_fn, enums_as
                 with_cpu_session(lambda spark: run_on_spark(spark).collect())}
     assert cpu_rows[1]["zero_count"] == 0 and cpu_rows[1]["empty_name"] == ""
     assert (cpu_rows[1]["ratio"], cpu_rows[1]["score"]) == (1.5, -2.25)
-    assert cpu_rows[1]["language"] == (2 if enums_as_ints else "ZH")
+    as_ints = enums_as_ints and with_cpu_session(_honors_enums_as_ints)
+    assert cpu_rows[1]["language"] == (2 if as_ints else "ZH")
     assert cpu_rows[1]["inner"] is None
     assert cpu_rows[3]["inner"]["count"] == 42 and cpu_rows[3]["inner"]["note"] is None
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
