@@ -19,6 +19,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
 from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides, disable_ansi_mode
 from pyspark.sql.types import *
+from pyspark.sql import Row
 from pyspark.sql.types import IntegralType
 from spark_session import *
 import pyspark.sql.functions as f
@@ -973,11 +974,27 @@ def test_hex(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('hex(a)'))
 
 
+def even_length_before_spark_332(df):
+    # Before Spark 3.3.2, the CPU decodes an odd number of hex digits incorrectly (SPARK-40924).
+    return df.filter('length(a) % 2 = 0') if is_before_spark_332() else df
+
+
 def test_unhex():
     values = [('4142',), ('aF',), ('F',), ('ABC',), ('',), ('00FF',),
               ('GG',), ('0xFF',), (' F',), ('é',), (None,)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.createDataFrame(values, 'a string').selectExpr('unhex(a)'))
+            lambda spark: even_length_before_spark_332(
+                spark.createDataFrame(values, 'a string')).selectExpr('unhex(a)'))
+
+
+def test_unhex_odd_length():
+    values = [('F',), ('ABC',), ('12345',), ('ABG',)]
+    expected = [Row(b=bytearray(b'\x0f')), Row(b=bytearray(b'\x0a\xbc')),
+                Row(b=bytearray(b'\x01\x23\x45')), Row(b=None)]
+    actual = with_gpu_session(
+            lambda spark: spark.createDataFrame(values, 'a string').selectExpr(
+                'unhex(a) AS b').collect())
+    assert actual == expected
 
 
 def test_unhex_binary_consumer():
@@ -991,7 +1008,8 @@ def test_unhex_binary_consumer():
                          ids=idfn)
 def test_unhex_generated(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, data_gen).selectExpr('unhex(a)'))
+            lambda spark: even_length_before_spark_332(
+                unary_op_df(spark, data_gen)).selectExpr('unhex(a)'))
 
 
 @pytest.mark.skipif(not is_spark_330_or_later() or not is_before_spark_340(),

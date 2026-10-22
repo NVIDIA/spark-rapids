@@ -917,6 +917,11 @@ digits as if a leading zero were present, and returns null for invalid input. Th
 hexadecimal form of `to_binary` in Spark 3.3 is also supported. Error-raising hexadecimal
 `to_binary` in Spark 3.4 and later falls back to the CPU.
 
+Spark 3.3.0 and 3.3.1 decode an odd number of hex digits incorrectly on the CPU
+([SPARK-40924](https://issues.apache.org/jira/browse/SPARK-40924)). For example, `unhex('ABC')`
+returns `0xBC00` instead of `0x0ABC`. The GPU returns the corrected result for every Spark version,
+so results for odd-length input differ from the CPU on those two versions.
+
 ### String to Date
 
 The following formats/patterns are supported on the GPU. Timezone of UTC is assumed.
