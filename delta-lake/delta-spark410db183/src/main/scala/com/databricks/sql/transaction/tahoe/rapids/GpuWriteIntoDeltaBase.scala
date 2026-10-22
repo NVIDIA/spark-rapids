@@ -21,6 +21,8 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
+import scala.util.Try
+
 import com.databricks.sql.transaction.tahoe.{DeltaOperations, OptimisticTransaction}
 import com.databricks.sql.transaction.tahoe.actions.Action
 import com.databricks.sql.transaction.tahoe.commands.WriteIntoDeltaEdge
@@ -42,7 +44,12 @@ abstract class GpuWriteIntoDeltaBase(
           cpuWrite.mode,
           Option(cpuWrite.partitionColumns),
           cpuWrite.options.replaceWhere,
-          cpuWrite.options.userMetadata)
+          cpuWrite.options.userMetadata,
+          isDynamicPartitionOverwrite =
+            Option.when(
+              Try(cpuWrite.options.isDynamicPartitionOverwriteMode).getOrElse(false))(true),
+          canOverwriteSchema = Option.when(cpuWrite.options.canOverwriteSchema)(true),
+          canMergeSchema = Option.when(cpuWrite.options.canMergeSchema)(true))
         commitActions(txn, actions, operation)
       }
     }

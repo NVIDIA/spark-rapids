@@ -55,16 +55,18 @@ These directories provide source roots, not independently built modules. The ful
 `db-400db173-410db183` source set requires `db-350db143-410db183`; their command and
 base-class implementations reference one another.
 
-- `db-400db173-410db183` needs compatible `GpuDeltaFileFormatWriter`,
-  `GpuOptimisticTransaction`, `GpuWriteIntoDeltaBase`, and `GpuDeltaParquetFileFormat`
-  implementations. Its commands use `GpuDeleteCommandBase`, `GpuUpdateCommandBase`,
+- `db-400db173-410db183` needs compatible `GpuOptimisticTransaction`,
+  `GpuWriteIntoDeltaBase`, and `GpuCreateDeltaTableCommandBase` implementations.
+  Its commands use `GpuDeleteCommandBase`, `GpuUpdateCommandBase`,
   `GpuOptimizeExecutorBase`, and `PartitionedBin` from `db-350db143-410db183`.
-- `db-350db143-410db183` needs compatible `GpuCreateDeltaTableCommand` and
-  `GpuOptimisticTransactionBase` implementations, together with `GpuDeleteCommand`,
-  `GpuWriteIntoDelta`, and `UpdateCommandShims` from `db-400db173-410db183`.
+- `db-350db143-410db183` needs compatible `GpuOptimisticTransactionBase`,
+  `GpuCreateDeltaTableCommand`, `GpuDeleteCommand`, `GpuWriteIntoDelta`, and
+  `UpdateCommandShims` implementations. DBR 17.3 and 18.3 obtain the latter four
+  from `db-400db173-410db183`; DBR 14.3 supplies its own implementations.
 
 DBR 17.3 and 18.3 share the native deletion-vector reader core, legacy Parquet reader,
-low-shuffle MERGE command, descriptor-based bitmap utilities, and reader eligibility helpers.
+low-shuffle MERGE command, provider base, write commands, MERGE command metadata shim,
+descriptor-based bitmap utilities, and reader eligibility helpers.
 Runtime wrappers derive low-shuffle discovery settings and the collision-safe row-index name
 from scan options. The shared bitmap lookup prefers row-index providers and keeps descriptor
 objects intact, avoiding the string encoding limit for large temporary deletion vectors.

@@ -389,10 +389,11 @@ def assert_delta_logs_at_paths_equivalent(spark, cpu_path, gpu_path):
     assert len(cpu_log_data) == len(gpu_log_data), "Different number of Delta log files:\nCPU: {}\nGPU: {}".format(cpu_log_data, gpu_log_data)
     cpu_logs_data = [ (os.path.basename(x), y) for x, y in cpu_log_data if x.endswith(".json") ]
     gpu_logs_dict = dict([ (os.path.basename(x), y) for x, y in gpu_log_data if x.endswith(".json") ])
-    for file, cpu_json_data in cpu_logs_data:
+    # Keep ID equivalence consistent across the complete, chronological history.
+    liquid_metadata_id_maps = ({}, {})
+    for file, cpu_json_data in sorted(cpu_logs_data):
         gpu_json_data = gpu_logs_dict.get(file)
         assert gpu_json_data, "CPU Delta log file {} is missing from GPU Delta logs".format(file)
-        liquid_metadata_id_maps = ({}, {})
         cpu_jsons = _decode_jsons(cpu_json_data)
         gpu_jsons = _decode_jsons(gpu_json_data)
         assert len(cpu_jsons) == len(gpu_jsons), "Different line counts in {}:\nCPU: {}\nGPU: {}".format(file, cpu_json_data, gpu_json_data)

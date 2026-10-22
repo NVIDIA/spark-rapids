@@ -3,7 +3,8 @@
 This module contains the DBR 18.3 reader, transaction, catalog, and write implementations.
 The default DBR 18.3 release profile continues to use `delta-stub` until build activation.
 
-The low-shuffle MERGE command and Parquet reader implementations are shared with DBR 17.3.
+The provider base, write commands, low-shuffle MERGE command, and Parquet reader
+implementations are shared with DBR 17.3. Native staged-write handling remains runtime specific.
 Both classic and Edge MERGE commands select low-shuffle MERGE when enabled. Discovery and
 rewrite scans retain the established reader-mode mapping and classic GPU MERGE fallbacks
 for unsupported scan settings, row-tracking tables, and existing deletion vectors.

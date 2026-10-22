@@ -21,6 +21,8 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
+import scala.util.Try
+
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.Metadata
 import com.databricks.sql.transaction.tahoe.commands.{
@@ -360,7 +362,12 @@ abstract class GpuCreateDeltaTableCommandBase(
     // This is legacy saveAsTable behavior in Databricks Runtime
     case TableCreationModes.Create if existingTableOpt.isDefined && query.isDefined =>
       DeltaOperations.Write(mode, Option(table.partitionColumnNames), options.get.replaceWhere,
-        options.flatMap(_.userMetadata))
+        options.flatMap(_.userMetadata),
+        isDynamicPartitionOverwrite = options.flatMap { opts =>
+          Option.when(Try(opts.isDynamicPartitionOverwriteMode).getOrElse(false))(true)
+        },
+        canOverwriteSchema = options.flatMap(opts => Option.when(opts.canOverwriteSchema)(true)),
+        canMergeSchema = options.flatMap(opts => Option.when(opts.canMergeSchema)(true)))
 
     // DataSourceV2 table creation
     // CREATE TABLE (non-DataFrameWriter API) doesn't have options syntax
@@ -377,7 +384,12 @@ abstract class GpuCreateDeltaTableCommandBase(
     // Legacy saveAsTable with Overwrite mode
     case TableCreationModes.CreateOrReplace if options.exists(_.replaceWhere.isDefined) =>
       DeltaOperations.Write(mode, Option(table.partitionColumnNames), options.get.replaceWhere,
-        options.flatMap(_.userMetadata))
+        options.flatMap(_.userMetadata),
+        isDynamicPartitionOverwrite = options.flatMap { opts =>
+          Option.when(Try(opts.isDynamicPartitionOverwriteMode).getOrElse(false))(true)
+        },
+        canOverwriteSchema = options.flatMap(opts => Option.when(opts.canOverwriteSchema)(true)),
+        canMergeSchema = options.flatMap(opts => Option.when(opts.canMergeSchema)(true)))
 
     // New DataSourceV2 saveAsTable with overwrite mode behavior
     case TableCreationModes.CreateOrReplace =>
