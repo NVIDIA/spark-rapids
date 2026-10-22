@@ -27,7 +27,7 @@ import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.spill.{SpillableDeviceBufferHandle, SpillableHandle}
+import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
@@ -431,9 +431,10 @@ class ShuffleBufferCatalog(val mapIdsCanRepeat: Boolean = false) extends Logging
   }
 
   /**
-   * Whether the catalog no longer holds a buffer that `getShuffleBufferHandle(tableId)`
-   * returned. Every catalog close removes the entries before closing the buffer, so a buffer
-   * found closed after its lookup is gone if, and only if, this is true.
+   * Whether the catalog no longer holds a buffer that a lookup of `tableId` returned, through
+   * `getShuffleBufferHandle` or a local read. Every catalog close removes the entries before
+   * closing the buffer, so a buffer found closed after its lookup is gone if, and only if, this
+   * is true.
    */
   def isShuffleBufferRemoved(tableId: Int, spillable: SpillableDeviceBufferHandle): Boolean = {
     val shuffleBufferId = tableMap.get(tableId)
@@ -446,7 +447,7 @@ class ShuffleBufferCatalog(val mapIdsCanRepeat: Boolean = false) extends Logging
     }
   }
 
-  /**
+  /*
    * Update the spill priority of a shuffle buffer that soon will be read locally.
    * @param handle shuffle buffer handle of buffer to update
    */
@@ -454,16 +455,6 @@ class ShuffleBufferCatalog(val mapIdsCanRepeat: Boolean = false) extends Logging
   //def updateSpillPriorityForLocalRead(handle: RapidsBufferHandle): Unit = {
   //  handle.setSpillPriority(SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
   //}
-
-  /**
-   * Remove a buffer and table given a buffer handle
-   * NOTE: This function is not thread safe! The caller should only invoke if
-   * the handle being removed is not being utilized by another thread.
-   * @param handle buffer handle
-   */
-  def removeBuffer(handle: SpillableHandle): Unit = {
-    handle.close()
-  }
 }
 
 /** One attempt's whole output for a map id, immutable once built. */
