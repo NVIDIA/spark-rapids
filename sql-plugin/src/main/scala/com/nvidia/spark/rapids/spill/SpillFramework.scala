@@ -201,7 +201,7 @@ trait SpillableHandle extends StoreHandle with Logging {
    * device spill instead leaves `spilling` set, as a successful one does, and `releaseSpilled`
    * resets it and completes any close after the post-spill synchronize. A caller that spills
    * a device handle directly must therefore synchronize the device and call `releaseSpilled`
-   * after `spill` returns a positive size or throws.
+   * after `spill` returns a positive size, or after it throws with `spillFailed` set.
    *
    * @note The size returned from this method is only used by the spill framework
    *       to track the approximate size. It should just return `approxSizeInBytes`, as

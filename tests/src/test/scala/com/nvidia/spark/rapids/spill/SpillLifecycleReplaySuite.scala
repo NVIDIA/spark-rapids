@@ -795,6 +795,7 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
         }
         if (closed) handle.close()
         assert(handle.spilling)
+        assert(handle.spillFailed)
         assert(handle.dev.isDefined)
         Cuda.deviceSynchronize()
         handle.releaseSpilled()
