@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning,
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.rdd.RDD
+import org.apache.spark.rdd.{DeterministicLevel, MapPartitionsRDD, RDD}
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, SortOrder}
@@ -445,8 +445,9 @@ object GpuShuffleExchangeExecBase {
      * here sorts on the GPU over all columns of the table in ascending order and nulls as smallest.
      * This essentially means the results are not one to one w.r.t. the row hashcode based sort.
      * As long as we don't mix and match repartition() between CPU and GPU this should not be a
-     * concern. Latest spark behavior does not even require this sort as it fails the upstream
-     * task when indeterminate tasks re-run.
+     * concern. Sorting within each batch does not make round-robin partition assignments
+     * repeatable when batch boundaries change, including during split-and-retry. The map RDD
+     * below must therefore mark multi-partition round-robin output as indeterminate.
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
       val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
@@ -477,8 +478,9 @@ object GpuShuffleExchangeExecBase {
         partitioner.columnarEvalAny(batch)
       }
     }
-    val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
-      newRdd.mapPartitions { iter =>
+    val isIndeterminate = isRoundRobin && newPartitioning.numPartitions > 1
+    val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = newRdd.withScope {
+      val partitionBatches = newRdd.sparkContext.clean { (iter: Iterator[ColumnarBatch]) =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
           private var partitionedIter: Iterator[Array[(ColumnarBatch, Int)]] =
@@ -545,6 +547,16 @@ object GpuShuffleExchangeExecBase {
             mutablePair.update(tup._2, tup._1)
             at += 1
             mutablePair
+          }
+        }
+      }
+      new MapPartitionsRDD[Product2[Int, ColumnarBatch], ColumnarBatch](
+        newRdd, (_, _, iter) => partitionBatches(iter)) {
+        override protected def getOutputDeterministicLevel: DeterministicLevel.Value = {
+          if (isIndeterminate) {
+            DeterministicLevel.INDETERMINATE
+          } else {
+            super.getOutputDeterministicLevel
           }
         }
       }
