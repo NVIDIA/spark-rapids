@@ -20,7 +20,6 @@ import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.RapidsMeta
 import org.apache.iceberg.{Table, TableProperties}
-import org.apache.iceberg.encryption.PlaintextEncryptionManager
 import org.apache.iceberg.spark.source.GpuSparkScanAccess
 
 import org.apache.spark.sql.connector.read.Scan
@@ -37,16 +36,11 @@ object IcebergEncryptionSupport {
   }
 
   def tagForWrite(table: Table, meta: RapidsMeta[_, _, _]): Unit = {
-    tag(meta)(isEncrypted(table))
+    tag(meta)(table.properties().containsKey(TableProperties.ENCRYPTION_TABLE_KEY))
   }
 
   def tagForWrite(properties: Map[String, String], meta: RapidsMeta[_, _, _]): Unit = {
     tag(meta)(properties.contains(TableProperties.ENCRYPTION_TABLE_KEY))
-  }
-
-  private[iceberg] def isEncrypted(table: Table): Boolean = {
-    table.properties().containsKey(TableProperties.ENCRYPTION_TABLE_KEY) ||
-      !table.encryption().isInstanceOf[PlaintextEncryptionManager]
   }
 
   private def tag(meta: RapidsMeta[_, _, _])(encrypted: => Boolean): Unit = {
@@ -55,7 +49,7 @@ object IcebergEncryptionSupport {
         meta.willNotWorkOnGpu(UnsupportedReason)
       }
     } catch {
-      // Encryption managers and catalog exceptions can contain sensitive key material.
+      // Catalog exceptions can contain sensitive key material.
       // Fail closed without including the exception or any key metadata in the explanation.
       case NonFatal(_) => meta.willNotWorkOnGpu(InspectionFailureReason)
     }
