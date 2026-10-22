@@ -1310,8 +1310,9 @@ class SpillableColumnarBatchFromBufferHandle private (
    * way spilling copies it, and spilled data is streamed from host memory or disk.
    *
    * Callers may hold locks that GPU tasks need, such as Spark's memory manager lock during
-   * `MemoryStore` eviction, so this must not wait for GPU resources. Device-resident data
-   * cannot spill until the write to `out` finishes.
+   * `MemoryStore` eviction, so this must not wait for GPU resources. It may wait for a host
+   * spill bounce buffer and for the copy through it; holders of those never need such locks.
+   * Device-resident data cannot spill until the write to `out` finishes.
    *
    * @return the metadata needed to unpack the bytes written
    */
@@ -1336,6 +1337,8 @@ class SpillableColumnarBatchFromBufferHandle private (
     if (devBatch != null) {
       withResource(devBatch) { cb =>
         val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
+        // The caller may not have acquired the semaphore, which sets the task thread's device
+        GpuDeviceManager.getDeviceId().foreach(Cuda.setDevice)
         SpillFramework.withHostSpillBounceBuffer { bounceBuffer =>
           val iter = new MemoryBufferToHostByteBufferIterator(
             cvFromBuffer.getBuffer,

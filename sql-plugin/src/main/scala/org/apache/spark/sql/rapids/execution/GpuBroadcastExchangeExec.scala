@@ -91,9 +91,11 @@ class SerializeConcatHostBuffersDeserializeBatch(
   // packed table bytes and metadata read back after an executor evicted a materialized batch
   @transient private var packedData: HostMemoryBuffer = null
   @transient private var packedMeta: Array[Byte] = null
-  // Serializes GPU work on this broadcast and guards `data` and `packedData` against release.
-  // GPU work must not hold this object's monitor, because `doWriteObject` needs the monitor while
-  // Spark holds its memory lock. Lock order: `materializeLock`, then this object's monitor.
+  // Serializes building and reading the GPU batch, and guards `data` and `packedData` against
+  // release. GPU work must not hold this object's monitor, because `doWriteObject` needs the
+  // monitor while Spark holds its memory lock. `doWriteObject` does not take this lock.
+  // Lock order: `materializeLock`, then this object's monitor. `closeInternal` holds both while
+  // it waits for hash builders, so builders must not call `batch` or `hostBatch`.
   @transient private lazy val materializeLock = new Object
 
   private def maybeGpuBatch: Option[SpillableColumnarBatch] = Option(batchInternal)
@@ -226,7 +228,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
       prepareBatch: Option[ColumnarBatch => ColumnarBatch],
       metrics: HashBuildMetrics): HashBackendProvider = {
     // Resolve the broadcast batch before capturing it in the build closure. closeInternal holds
-    // the monitor while waiting for builders, so the build must not call batch to avoid deadlock.
+    // the locks while waiting for builders, so the build must not call batch or hostBatch.
     val buildBatch = batch
     val key = HashBuildKey.fromExpressions(
       sourceProjection, boundBuiltKeys, compareNullsEqual, filterOutNulls)
@@ -256,12 +258,14 @@ class SerializeConcatHostBuffersDeserializeBatch(
    *
    * The driver will have `data` populated on construction and the executor will deserialize
    * the object and, as part of the deserialization, invoke `doReadObject`.
-   * This will populate `data` before any task has had a chance to call `.batch` on this class.
+   * This will populate `data`, or `packedData` for a block this executor evicted, before any
+   * task has had a chance to call `.batch` on this class.
    *
    * If `batchInternal` is defined we are in the executor, and this broadcast has been
    * materialized on the GPU/spill store. Spark calls this method while holding its memory
    * manager lock, which GPU tasks may also need, so this path writes the packed table bytes
    * without waiting on the GPU semaphore, a device allocation, or `materializeLock`.
+   * A reloaded broadcast that no task has materialized writes its `packedData` again.
    *
    * Public for unit tests.
    *

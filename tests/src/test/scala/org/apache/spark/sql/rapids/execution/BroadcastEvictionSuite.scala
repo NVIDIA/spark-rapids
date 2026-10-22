@@ -18,12 +18,15 @@ package org.apache.spark.sql.rapids.execution
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream,
   ObjectOutputStream}
-import java.util.concurrent.{Callable, CountDownLatch, Executors, TimeoutException, TimeUnit}
+import java.util.concurrent.{Callable, CountDownLatch, Executors, Future, TimeoutException,
+  TimeUnit}
+import java.util.concurrent.atomic.AtomicReference
 
-import ai.rapids.cudf.Table
+import ai.rapids.cudf.{Rmm, RmmAllocationMode, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuDeviceManager, GpuSemaphore, NoopMetric,
   SpillableColumnarBatch, SpillableColumnarBatchFromBufferImpl, TestUtils}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.spill.{SpillFramework, SpillUnitTestBase}
 import org.apache.commons.lang3.SerializationUtils
 
@@ -33,7 +36,7 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
  * Spark's `MemoryStore` serializes an evicted broadcast block while it holds the memory manager
@@ -41,9 +44,15 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * wait for the GPU semaphore (https://github.com/NVIDIA/cudf-spark/issues/16460).
  */
 class BroadcastEvictionSuite extends SpillUnitTestBase {
+  private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {
     super.beforeEach()
+    // Tracks device allocations so tests can check that eviction makes none
+    if (!Rmm.isInitialized) {
+      rmmWasInitialized = true
+      Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    }
     // The semaphore initializes the GPU for a task from the SparkEnv.
     SparkSession.builder.master("local[1]").appName(getClass.getSimpleName).getOrCreate()
     GpuDeviceManager.setRmmTaskInitEnabled(false)
@@ -56,6 +65,10 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
     super.afterEach()
+    if (rmmWasInitialized) {
+      rmmWasInitialized = false
+      Rmm.shutdown()
+    }
   }
 
   private def buildBatch(): ColumnarBatch = {
@@ -91,8 +104,11 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
     baos.toByteArray
   }
 
-  private def read(bytes: Array[Byte]): SerializeConcatHostBuffersDeserializeBatch = {
-    val broadcast = new SerializeConcatHostBuffersDeserializeBatch(null, Seq.empty, 0, 0L)
+  private def read(
+      bytes: Array[Byte],
+      broadcast: SerializeConcatHostBuffersDeserializeBatch =
+        new SerializeConcatHostBuffersDeserializeBatch(null, Seq.empty, 0, 0L))
+      : SerializeConcatHostBuffersDeserializeBatch = {
     withResource(new ObjectInputStream(new ByteArrayInputStream(bytes))) { ois =>
       broadcast.doReadObject(ois)
     }
@@ -107,39 +123,57 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
     }
   }
 
-  /** Run `body` like a `MemoryStore` eviction while another task holds the only GPU permit. */
-  private def evictWhileGpuIsBusy[T](body: => T): T = {
+  private def awaitOrFail[T](future: Future[T], failure: String): T = {
+    try {
+      future.get(30, TimeUnit.SECONDS)
+    } catch {
+      case _: TimeoutException => fail(failure)
+    }
+  }
+
+  /** Run `body` while another task holds the only GPU permit. */
+  private def whileGpuIsBusy[T](body: => T): T = {
     val holderContext = new MockTaskContext(taskAttemptId = 1, partitionId = 0)
+    GpuSemaphore.acquireIfNecessary(holderContext)
+    // Completing the holder releases its permit, which also ends a deadlock.
+    try body finally holderContext.markTaskComplete()
+  }
+
+  /**
+   * Run `body` like a `MemoryStore` eviction, on a task thread that holds the memory manager
+   * lock, and check that it does not allocate device memory.
+   */
+  private def evict[T](failure: String)(body: => T): T = {
     val evictorContext = new MockTaskContext(taskAttemptId = 2, partitionId = 1)
-    val memoryManager = SparkEnv.get.memoryManager
     val pool = Executors.newSingleThreadExecutor()
     try {
-      GpuSemaphore.acquireIfNecessary(holderContext)
-      // Spark evicts the block from a task thread while holding the memory manager lock
       val evictor = pool.submit(new Callable[T] {
         override def call(): T = {
           TrampolineUtil.setTaskContext(evictorContext)
           try {
-            memoryManager.synchronized(body)
+            SparkEnv.get.memoryManager.synchronized {
+              val allocated = Rmm.getTotalBytesAllocated
+              Rmm.resetScopedMaximumBytesAllocated(allocated)
+              val result = body
+              assert(Rmm.getScopedMaximumBytesAllocated == allocated,
+                "eviction allocated device memory")
+              result
+            }
           } finally {
             TrampolineUtil.unsetTaskContext()
           }
         }
       })
-      try {
-        evictor.get(30, TimeUnit.SECONDS)
-      } catch {
-        case _: TimeoutException =>
-          fail("deadlock: eviction holds the memory manager lock and waits for the GPU")
-      }
+      awaitOrFail(evictor, failure)
     } finally {
-      // Completing the holder releases its permit, which also ends a deadlock.
-      holderContext.markTaskComplete()
-      pool.shutdown()
+      // Interrupt a stuck eviction so that it releases the memory manager lock
+      pool.shutdownNow()
       pool.awaitTermination(30, TimeUnit.SECONDS)
       evictorContext.markTaskComplete()
     }
   }
+
+  private val gpuDeadlock = "deadlock: eviction holds the memory manager lock and waits for the GPU"
 
   /** Number of spill handles on the device, in host memory, and on disk. */
   private def residency: (Int, Int, Int) = {
@@ -162,10 +196,10 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
             }
             assert(residency == expectedResidency)
             // Evict it, then evict the reloaded copy before any task materializes it
-            val (bytes, bytesAgain) = evictWhileGpuIsBusy {
+            val (bytes, bytesAgain) = whileGpuIsBusy(evict(gpuDeadlock) {
               val bytes = write(broadcast)
               (bytes, withBroadcast(read(bytes))(write))
-            }
+            })
             assert(residency == expectedResidency)
             withBroadcast(read(bytes))(assertSameData(expected, _))
             withBroadcast(read(bytesAgain))(assertSameData(expected, _))
@@ -173,6 +207,72 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
           }
         }
       }
+  }
+
+  Seq[(String, () => ColumnarBatch)](
+    ("zero-row", () => GpuColumnVector.emptyBatchFromTypes(Array(IntegerType, DoubleType))),
+    ("rows-only", () => new ColumnarBatch(Array.empty, 1234))).foreach { case (kind, build) =>
+    test(s"evicting a materialized $kind broadcast does not wait for the GPU") {
+      withResource(build()) { expected =>
+        withBroadcast(makeBroadcastBatch(expected)) { broadcast =>
+          broadcast.batch
+          val bytes = whileGpuIsBusy(evict(gpuDeadlock)(write(broadcast)))
+          withBroadcast(read(bytes))(assertSameData(expected, _))
+        }
+      }
+    }
+  }
+
+  /** Wait until `thread` is blocked in the GPU semaphore. */
+  private def awaitWaitingForGpu(thread: AtomicReference[Thread]): Unit = {
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+    def waiting: Boolean = Option(thread.get).exists { t =>
+      (t.getState == Thread.State.WAITING || t.getState == Thread.State.TIMED_WAITING) &&
+        t.getStackTrace.exists(_.getClassName.contains("Semaphore"))
+    }
+    while (!waiting) {
+      assert(System.nanoTime() < deadline, "the task never waited for the GPU")
+      Thread.sleep(10)
+    }
+  }
+
+  test("evicting a broadcast does not wait for a task copying it to the host") {
+    withResource(buildBatch()) { expected =>
+      withBroadcast(makeBroadcastBatch(expected)) { broadcast =>
+        broadcast.batch
+        val readerContext = new MockTaskContext(taskAttemptId = 3, partitionId = 2)
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+          val (reader, bytes) = whileGpuIsBusy {
+            val readerThread = new AtomicReference[Thread]()
+            // A task waits for the GPU while it copies the broadcast to the host
+            val reader = pool.submit(new Callable[ColumnarBatch] {
+              override def call(): ColumnarBatch = {
+                readerThread.set(Thread.currentThread())
+                TrampolineUtil.setTaskContext(readerContext)
+                try broadcast.hostBatch finally TrampolineUtil.unsetTaskContext()
+              }
+            })
+            awaitWaitingForGpu(readerThread)
+            (reader, evict("deadlock: eviction waits for a task copying the broadcast to the host")(
+              write(broadcast)))
+          }
+          val expectedHost = new ColumnarBatch(
+            GpuColumnVector.extractColumns(expected).safeMap(_.copyToHost(): ColumnVector),
+            expected.numRows())
+          withResource(expectedHost) { _ =>
+            withResource(awaitOrFail(reader, "the task did not copy the broadcast")) { actual =>
+              TestUtils.compareBatches(expectedHost, actual)
+            }
+          }
+          withBroadcast(read(bytes))(assertSameData(expected, _))
+        } finally {
+          readerContext.markTaskComplete()
+          pool.shutdownNow()
+          pool.awaitTermination(30, TimeUnit.SECONDS)
+        }
+      }
+    }
   }
 
   Seq(false, true).foreach { packed =>
@@ -188,40 +288,30 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
         val building = new CountDownLatch(1)
         val mayBuild = new CountDownLatch(1)
         // A task pauses while building the GPU batch, as it would while waiting for device memory
-        val broadcast = new SerializeConcatHostBuffersDeserializeBatch(null, Seq.empty, 0, 0L) {
-          override protected def buildGpuBatch(): SpillableColumnarBatch = {
-            building.countDown()
-            assert(mayBuild.await(30, TimeUnit.SECONDS))
-            super.buildGpuBatch()
-          }
-        }
-        withResource(new ObjectInputStream(new ByteArrayInputStream(bytes))) { ois =>
-          broadcast.doReadObject(ois)
-        }
+        val broadcast = read(bytes,
+          new SerializeConcatHostBuffersDeserializeBatch(null, Seq.empty, 0, 0L) {
+            override protected def buildGpuBatch(): SpillableColumnarBatch = {
+              building.countDown()
+              assert(mayBuild.await(30, TimeUnit.SECONDS))
+              super.buildGpuBatch()
+            }
+          })
         withBroadcast(broadcast) { _ =>
-          val memoryManager = SparkEnv.get.memoryManager
-          val pool = Executors.newFixedThreadPool(2)
+          val pool = Executors.newSingleThreadExecutor()
           try {
             val materializer = pool.submit(new Callable[SpillableColumnarBatch] {
               override def call(): SpillableColumnarBatch = broadcast.batch
             })
             assert(building.await(30, TimeUnit.SECONDS))
-            val evictor = pool.submit(new Callable[Array[Byte]] {
-              override def call(): Array[Byte] = memoryManager.synchronized(write(broadcast))
-            })
-            val evicted = try {
-              evictor.get(30, TimeUnit.SECONDS)
-            } catch {
-              case _: TimeoutException =>
-                fail("deadlock: eviction waits for a task building the GPU batch")
-            }
+            val evicted = evict("deadlock: eviction waits for a task building the GPU batch")(
+              write(broadcast))
             mayBuild.countDown()
-            materializer.get(30, TimeUnit.SECONDS)
+            awaitOrFail(materializer, "the task did not build the GPU batch")
             withBroadcast(read(evicted))(assertSameData(expected, _))
             assertSameData(expected, broadcast)
           } finally {
             mayBuild.countDown()
-            pool.shutdown()
+            pool.shutdownNow()
             pool.awaitTermination(30, TimeUnit.SECONDS)
           }
         }
@@ -236,13 +326,14 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
   }
 
   test("reading a truncated packed broadcast fails") {
-    withResource(buildBatch()) { expected =>
-      val bytes = withBroadcast(makeBroadcastBatch(expected)) { b =>
-        b.batch
-        write(b)
-      }
-      val truncated = java.util.Arrays.copyOf(bytes, bytes.length / 2)
-      assertThrows[Exception](read(truncated).closeInternal())
+    val baos = new ByteArrayOutputStream()
+    withResource(new ObjectOutputStream(baos)) { oos =>
+      oos.writeByte(SerializeConcatHostBuffersDeserializeBatch.PACKED_FORMAT)
+      oos.writeInt(1)
+      oos.writeLong(100)
+      oos.write(new Array[Byte](10))
     }
+    val e = intercept[IllegalStateException](read(baos.toByteArray).closeInternal())
+    assert(e.getMessage.contains("Expected to read 100 bytes, but got 10 bytes"))
   }
 }
