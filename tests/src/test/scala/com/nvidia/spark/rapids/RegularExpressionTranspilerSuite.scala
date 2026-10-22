@@ -387,7 +387,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
       "(x|(?i)y)|z", "((?i)a)|b", "a(?i:b)|c", "(?i)a+|b", "(?i)a|b|c", "a|b(?i)|c", "(?-i)a|b",
       "(?i)a|(?-i)b|c", "(?i)(a|b(?-i))|c", "(?i)(?:a|(?-i)b|c)|d", "(a|(?i)b)|c",
       "(?i)ab|cd|ef", "x(?i)(y|z)|w",
-      // https://github.com/NVIDIA/cudf-spark/issues/16157 workaround form of a customer pattern
+      // a `\|*` rewritten as `[|]*`, see https://github.com/NVIDIA/cudf-spark/issues/16157
       raw"(?i)\w+=false\||[|]*\w+=false")
     val inputs = Seq("", "a", "A", "b", "B", "c", "C", "d", "D", "x", "X", "y", "Y", "z", "Z",
       "w", "W", "AB", "Ab", "aB", "cd", "Cd", "cD", "CD", "bd", "Bd", "BD", "ad", "Ad", "ABC",
