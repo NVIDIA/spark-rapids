@@ -721,13 +721,16 @@ def _build_defaults_descriptor_set_bytes(spark):
                 _field("empty_name", 5, "STRING", default=""),
                 _field("language", 6, "ENUM", type_name=".test.Language", default="ZH"),
                 _field("inner", 7, "MESSAGE", type_name=".test.DefaultsInner"),
+                _field("ratio", 8, "FLOAT", default=1.5),
+                _field("score", 9, "DOUBLE", default=-2.25),
             ]),
         ],
         file_enums=[_enum("Language", [("UNKNOWN_LANGUAGE", 0), ("EN", 1), ("ZH", 2)])])
 
 
+@pytest.mark.parametrize("enums_as_ints", [False, True], ids=["string", "int"])
 @ignore_order(local=True)
-def test_from_protobuf_default_values(local_tmp_path, from_protobuf_fn):
+def test_from_protobuf_default_values(local_tmp_path, from_protobuf_fn, enums_as_ints):
     """Absent fields take their declared defaults, including inside a present nested message,
     while an absent nested message stays null."""
     desc = _setup_protobuf_desc(
@@ -739,7 +742,9 @@ def test_from_protobuf_default_values(local_tmp_path, from_protobuf_fn):
         (0, _encode_varint_field(1, 100) + _encode_length_delimited_field(2, "test") +
             _encode_varint_field(3, 0) + _encode_varint_field(4, 5) +
             _encode_length_delimited_field(5, "x") + _encode_varint_field(6, 1) +
-            _encode_length_delimited_field(7, full_inner)),
+            _encode_length_delimited_field(7, full_inner) +
+            _encode_tag(8, 5) + struct.pack("<f", 0.25) +
+            _encode_tag(9, 1) + struct.pack("<d", 3.5)),
         (1, b""),
         (2, _encode_varint_field(1, 100)),
         (3, _encode_length_delimited_field(7, b"")),
@@ -749,11 +754,15 @@ def test_from_protobuf_default_values(local_tmp_path, from_protobuf_fn):
 
     def run_on_spark(spark):
         df = spark.createDataFrame(rows, schema="idx int, bin binary")
-        return df.select("idx", _decode(from_protobuf_fn, desc, "Defaults").alias("decoded"))
+        return df.select("idx", _decode(from_protobuf_fn, desc, "Defaults", options)
+                         .alias("decoded"))
 
+    options = {"enums.as.ints": "true"} if enums_as_ints else None
     cpu_rows = {row["idx"]: row["decoded"] for row in
                 with_cpu_session(lambda spark: run_on_spark(spark).collect())}
     assert cpu_rows[1]["zero_count"] == 0 and cpu_rows[1]["empty_name"] == ""
+    assert (cpu_rows[1]["ratio"], cpu_rows[1]["score"]) == (1.5, -2.25)
+    assert cpu_rows[1]["language"] == (2 if enums_as_ints else "ZH")
     assert cpu_rows[1]["inner"] is None
     assert cpu_rows[3]["inner"]["count"] == 42 and cpu_rows[3]["inner"]["note"] is None
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
