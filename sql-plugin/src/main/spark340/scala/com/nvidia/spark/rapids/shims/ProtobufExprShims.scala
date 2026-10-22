@@ -111,6 +111,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
 
         private var fullSchema: StructType = _
         private var failOnErrors: Boolean = _
+        private var malformedRowsAsNullFields: Boolean = _
         private var decodePlan: DecodePlan = _
         // Full-output plan to switch to if a plan reading the pruned struct runs on the CPU.
         private var unprunedPlan: Option[DecodePlan] = None
@@ -155,6 +156,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
         } yield {
           failOnErrors = plannerOptions.failOnErrors
+          malformedRowsAsNullFields = plannerOptions.malformedRowsAsNullFields
           decodePlan = plan
           unprunedPlan = unpruned
           overrideDataType(plan.decodedSchema)
@@ -766,7 +768,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = {
-          GpuFromProtobuf(decodePlan.decodedSchema, decodePlan.flatSchema, failOnErrors, child)
+          GpuFromProtobuf(decodePlan.decodedSchema, decodePlan.flatSchema, failOnErrors,
+            malformedRowsAsNullFields, child)
         }
       }
     )

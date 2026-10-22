@@ -80,24 +80,9 @@ def _has_permissive_null_row_fix():
 
 
 # Without SPARK-46275, Spark returns a struct of null fields for malformed PERMISSIVE rows and
-# rejects DROPMALFORMED during analysis; PERMISSIVE then stays on CPU.
+# rejects DROPMALFORMED during analysis.
 _permissive_null_row_fix = _has_permissive_null_row_fix()
-_permissive_marks = [] if _permissive_null_row_fix else [allow_non_gpu("ProtobufDataToCatalyst")]
-_modes = [pytest.param("PERMISSIVE", marks=_permissive_marks), "FAILFAST"]
-
-
-def _assert_permissive_gpu_and_cpu_equal(run_on_spark, conf={}):
-    if not _permissive_null_row_fix:
-        assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst", conf=conf)
-    else:
-        assert_gpu_and_cpu_are_equal_collect(run_on_spark, conf=conf)
-
-
-def _assert_gpu_and_cpu_equal_in_mode(run_on_spark, mode, conf={}):
-    if mode == "PERMISSIVE":
-        _assert_permissive_gpu_and_cpu_equal(run_on_spark, conf=conf)
-    else:
-        assert_gpu_and_cpu_are_equal_collect(run_on_spark, conf=conf)
+_modes = ["PERMISSIVE", "FAILFAST"]
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +689,7 @@ def test_from_protobuf_unknown_nested_enum(
         return df.select("idx", _decode(from_protobuf_fn, desc, "EnumRoot", options)
                          .alias("decoded"))
 
-    _assert_gpu_and_cpu_equal_in_mode(run_on_spark, mode)
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
 def _build_defaults_descriptor_set_bytes(spark):
@@ -1743,7 +1728,25 @@ def test_from_protobuf_malformed_input(
         assert_gpu_and_cpu_error(lambda spark: run_on_spark(spark).collect(), {},
                                  "MALFORMED_PROTOBUF_MESSAGE")
     else:
-        _assert_permissive_gpu_and_cpu_equal(run_on_spark)
+        assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.parametrize("null_input", [False, True], ids=idfn)
+@ignore_order(local=True)
+def test_from_protobuf_permissive_malformed_rows_in_one_batch(
+        local_tmp_path, from_protobuf_fn, null_input):
+    """Without SPARK-46275, the GPU rebuilds struct validity only for batches with malformed
+    rows, so keep valid, malformed and null rows in the same batch."""
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
+    rows = [(0, _simple_valid), (1, bytes([0x08, 0x80]))] + ([(2, None)] if null_input else [])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(rows, schema="idx int, bin binary").coalesce(1)
+        return df.select("idx", _decode(from_protobuf_fn, desc, "Simple", {"mode": "PERMISSIVE"})
+                         .alias("decoded"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
 @pytest.mark.parametrize("malformed", [False, True], ids=["valid", "malformed"])
