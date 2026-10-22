@@ -1104,13 +1104,45 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
 
 # The condition reads only the stream side, so column pruning leaves a rows-only build.
 @pytest.mark.parametrize('build_length', [0, 3], ids=idfn)
-@pytest.mark.parametrize('batch_size', [100, '1g'], ids=idfn)
+@pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
 def test_broadcast_nested_loop_join_rows_only_build(build_length, batch_size):
     def do_join(spark):
         left = gen_df(spark, [('a', SetValuesGen(IntegerType(), [None, 0, 5, 6, 9]))],
                       length=100, num_slices=1)
         right = gen_df(spark, [('b', int_gen)], length=build_length, num_slices=1)
         return left.join(broadcast(right), col('a') > 5, 'left_anti').agg(f.count(lit(1)))
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes='GpuBroadcastNestedLoopJoinExec',
+        conf={'spark.sql.adaptive.enabled': 'false',
+              'spark.rapids.sql.batchSizeBytes': batch_size})
+
+# Spark 4.0 keeps a predicate that can throw, such as sequence, in the join condition. A predicate
+# that reads one side then leaves the other side with rows and no columns.
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type,build_side', [
+    ('Inner', 'left'), ('Inner', 'right'), ('LeftSemi', 'right'), ('LeftAnti', 'right'),
+    ('LeftOuter', 'right'), ('RightOuter', 'left')], ids=idfn)
+@pytest.mark.parametrize('predicate_side', ['left', 'right'], ids=idfn)
+@pytest.mark.parametrize('build_length', [0, 30], ids=idfn)
+@pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
+def test_broadcast_nested_loop_join_one_sided_sequence_condition(
+        join_type, build_side, predicate_side, build_length, batch_size):
+    def do_join(spark):
+        values = SetValuesGen(IntegerType(), [None, 0, 5, 6, 9])
+        left = gen_df(spark, [('a', values)],
+                      length=build_length if build_side == 'left' else 100, num_slices=1)
+        right = gen_df(spark, [('b', values)],
+                       length=build_length if build_side == 'right' else 100, num_slices=1)
+        if build_side == 'left':
+            left = broadcast(left)
+        else:
+            right = broadcast(right)
+        name = 'a' if predicate_side == 'left' else 'b'
+        side = col(name)
+        joined = left.join(right, f.size(f.sequence(side, side + 3, lit(1))) > side, join_type)
+        # LeftSemi and LeftAnti return only the left columns.
+        return joined.select([c for c in joined.columns if c == name])
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         do_join,
         exist_classes='GpuBroadcastNestedLoopJoinExec',
