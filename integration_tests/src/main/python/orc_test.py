@@ -1332,7 +1332,8 @@ def test_orc_with_null_column(spark_tmp_path, reader_confs):
 
 @ignore_order
 @large_data_test
-# AQE may replace the empty result of the c2 = 5 query with Spark's row-based EmptyRelationExec.
+# AQE may replace an empty query subtree with row-based EmptyRelationExec.
+# Allow this empty leaf while retaining GPU validation for other operators.
 @allow_non_gpu("EmptyRelationExec")
 @pytest.mark.parametrize("reader_confs", reader_opt_confs, ids=idfn)
 def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
@@ -1362,7 +1363,8 @@ def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
         assert_gpu_and_cpu_are_equal_sql(
             lambda spark: spark.read.orc(gpu_file_path),
             "my_large_table",
-            sql)
+            sql,
+            conf=all_confs)
 
 
 #
