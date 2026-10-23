@@ -15,12 +15,14 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark":"410db183"}
 {"spark":"420"}
 {"spark":"500"}
 spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
+// DBR 18.3 backports the Spark 4.2 DescriptorWithExtensions builder result.
 private[shims] object SparkProtobufCompat extends BinarySparkProtobufCompat {
   override private[shims] def unwrapMessageDescriptor(raw: AnyRef): AnyRef =
     ProtobufReflection.invoke0[AnyRef](raw, "descriptor")
