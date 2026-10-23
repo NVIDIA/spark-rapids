@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import java.io.IOException
+import java.lang.reflect.{InvocationHandler, Method, Proxy}
 import java.util.concurrent.{Callable, FutureTask}
 
 import scala.collection.mutable.ArrayBuffer
@@ -116,12 +117,52 @@ private object DeletionVectorOutputColumns {
   }
 }
 
+/**
+ * Visits the rows of one window of a deletion vector that are not marked. The plugin shades
+ * RoaringBitmap, but DBR's bitmap API takes the unshaded consumer interface, so the call is bridged
+ * with a proxy of the interface loaded from DBR's own class loader.
+ */
+private object UnmarkedRowRuns {
+  // The consumer type is taken from the method rather than named, because the build would also
+  // relocate a class name given as a string.
+  private val forAllInRange = classOf[RoaringBitmapArray].getMethods
+    .find(_.getName == "forAllInRange").get
+  private val consumerClass = forAllInRange.getParameterTypes()(2)
+
+  /** Calls absent(from, until) with positions relative to start, in ascending order. */
+  def foreach(bitmap: RoaringBitmapArray, start: Long, length: Int)(
+      absent: (Int, Int) => Unit): Unit = {
+    val handler = new InvocationHandler {
+      override def invoke(proxy: AnyRef, method: Method, args: Array[AnyRef]): AnyRef = {
+        method.getName match {
+          case "acceptAbsent" =>
+            val position = args(0).asInstanceOf[java.lang.Integer].intValue()
+            absent(position, position + 1)
+            null
+          case "acceptAllAbsent" =>
+            absent(args(0).asInstanceOf[java.lang.Integer].intValue(),
+              args(1).asInstanceOf[java.lang.Integer].intValue())
+            null
+          case "hashCode" => Int.box(System.identityHashCode(proxy))
+          case "equals" => Boolean.box(proxy eq args(0))
+          case "toString" => "UnmarkedRowRuns consumer"
+          case _ => null // marked rows need no work
+        }
+      }
+    }
+    val consumer = Proxy.newProxyInstance(
+      consumerClass.getClassLoader, Array[Class[_]](consumerClass), handler)
+    forAllInRange.invoke(bitmap, Long.box(start), Int.box(length), consumer)
+  }
+}
+
 /** File-relative physical row indexes, kept as (offset, count) ranges until built on the GPU. */
 private object PhysicalRowIndexes {
   /**
-   * Row-group ranges minus the rows marked in a deletion vector. Only the marked rows are visited,
-   * so a file without a deletion vector costs nothing and memory is bounded by the number of
-   * surviving runs rather than the number of rows.
+   * Row-group ranges minus the rows marked in a deletion vector. Only the bitmap window of each
+   * row group is visited, so the cost follows the rows being read rather than the size of the
+   * file's whole bitmap, and a file without a deletion vector costs nothing. Memory is bounded by
+   * the number of surviving runs rather than the number of rows.
    */
   def survivingRanges(
       rowGroupOffsets: Array[Long],
@@ -129,28 +170,30 @@ private object PhysicalRowIndexes {
       deletedRows: RoaringBitmapArray): Array[(Long, Int)] = {
     require(rowGroupOffsets.length == rowGroupNumRows.length)
     val ranges = ArrayBuffer.empty[(Long, Int)]
-    def emit(from: Long, until: Long): Unit = {
-      if (until > from) ranges += ((from, Math.toIntExact(until - from)))
-    }
-    var group = 0
-    var next = if (rowGroupOffsets.nonEmpty) rowGroupOffsets(0) else 0L
-    def groupEnd: Long = rowGroupOffsets(group) + rowGroupNumRows(group)
-    def finishGroup(): Unit = {
-      emit(next, groupEnd)
-      group += 1
-      if (group < rowGroupOffsets.length) next = rowGroupOffsets(group)
-    }
-    if (deletedRows.cardinality > 0) {
-      // Marked rows are visited in ascending order, as are the row groups.
-      deletedRows.forEach { deleted: Long =>
-        while (group < rowGroupOffsets.length && deleted >= groupEnd) finishGroup()
-        if (group < rowGroupOffsets.length && deleted >= rowGroupOffsets(group)) {
-          emit(next, deleted)
-          next = deleted + 1
+    val noDeletedRows = deletedRows.cardinality == 0
+    rowGroupOffsets.indices.filter(rowGroupNumRows(_) > 0).foreach { group =>
+      val offset = rowGroupOffsets(group)
+      val numRows = rowGroupNumRows(group)
+      if (noDeletedRows) {
+        ranges += ((offset, numRows))
+      } else {
+        // Positions are relative to the window start. Adjacent absent runs are merged.
+        var runStart = 0
+        var runEnd = 0
+        def flush(): Unit = {
+          if (runEnd > runStart) ranges += ((offset + runStart, runEnd - runStart))
         }
+        def absent(from: Int, until: Int): Unit = {
+          if (from != runEnd) {
+            flush()
+            runStart = from
+          }
+          runEnd = until
+        }
+        UnmarkedRowRuns.foreach(deletedRows, offset, numRows)(absent)
+        flush()
       }
     }
-    while (group < rowGroupOffsets.length) finishGroup()
     ranges.toArray
   }
 
@@ -209,20 +252,39 @@ private object PhysicalRowIndexes {
     }
   }
 
-  /** Builds already flattened file-relative row-group sequences; the caller owns the result. */
+  /**
+   * Builds the indexes of already flattened file-relative ranges with a constant number of GPU
+   * operations however many ranges there are; the caller owns the result. Fragmented deletion
+   * vectors produce many short ranges, so a column per range would be needlessly expensive.
+   */
   def buildColumn(rowGroupRanges: Array[(Long, Int)]): ColumnVector = {
-    val rowIndexChunks = rowGroupRanges.safeMap { case (offset, numRows) =>
-      withResource(Scalar.fromLong(offset)) { start =>
-        ColumnVector.sequence(start, numRows)
+    if (rowGroupRanges.isEmpty) {
+      ColumnVector.fromLongs()
+    } else if (rowGroupRanges.length == 1) {
+      val (offset, numRows) = rowGroupRanges.head
+      withResource(Scalar.fromLong(offset))(ColumnVector.sequence(_, numRows))
+    } else {
+      // index = (range start - rows in earlier ranges) repeated for each row + position in batch
+      val shifts = new Array[Long](rowGroupRanges.length)
+      val counts = new Array[Int](rowGroupRanges.length)
+      var previousRows = 0L
+      rowGroupRanges.zipWithIndex.foreach { case ((offset, numRows), i) =>
+        shifts(i) = offset - previousRows
+        counts(i) = numRows
+        previousRows += numRows
       }
-    }
-    withResource(rowIndexChunks) { chunks =>
-      if (chunks.isEmpty) {
-        ColumnVector.fromLongs()
-      } else if (chunks.length == 1) {
-        chunks.head.incRefCount()
-      } else {
-        ColumnVector.concatenate(chunks: _*)
+      withResource(ColumnVector.fromLongs(shifts: _*)) { shiftColumn =>
+        withResource(ColumnVector.fromInts(counts: _*)) { countColumn =>
+          withResource(new Table(shiftColumn)) { shiftTable =>
+            withResource(shiftTable.repeat(countColumn)) { repeated =>
+              withResource(Scalar.fromLong(0L)) { zero =>
+                withResource(ColumnVector.sequence(zero, Math.toIntExact(previousRows))) {
+                  positions => repeated.getColumn(0).add(positions)
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

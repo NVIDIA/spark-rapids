@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids.delta.shims
 import com.databricks.sql.transaction.tahoe.{DeltaParquetFileFormat, Snapshot}
 import com.databricks.sql.transaction.tahoe.commands.DeletionVectorUtils
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
-import com.nvidia.spark.rapids.{GpuColumnVector, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.RapidsMeta
+import com.nvidia.spark.rapids.parquet.GpuParquetScan
 
 import org.apache.spark.internal.config.ConfigEntry
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.StructType
 
 /** Fallback checks shared by DBR 17.3+ DELETE, UPDATE and MERGE with persistent DVs. */
@@ -53,24 +54,19 @@ object PersistentDeletionVectorMetaShim {
           "Persistent deletion vector writes on GPU require DBR metadata row indexes and " +
             "native cuDF deletion-vector predicate pushdown")
       }
-      if (!(rapidsConf.isParquetEnabled && rapidsConf.isParquetReadEnabled)) {
+      val fileScanKey = "spark.rapids.sql.exec.FileSourceScanExec"
+      if (!rapidsConf.isOperatorEnabled(fileScanKey, incompat = false, isDisabledByDefault = false)) {
         meta.willNotWorkOnGpu(
-          "Persistent deletion vector writes on GPU require the GPU Parquet reader, which is " +
-            s"disabled by ${RapidsConf.ENABLE_PARQUET} or ${RapidsConf.ENABLE_PARQUET_READ}")
+          "Persistent deletion vector writes on GPU require the GPU file scan, which is disabled")
       }
+      // The target scan must run on the GPU, so apply the checks that scan would apply to the
+      // target schema (Parquet switches, legacy nanosAsLong, unsupported or shredded types).
+      GpuParquetScan.tagSupport(SparkSession.active, targetSchema, meta)
       if (targetSchema.fieldNames.exists(
           sqlConf.resolver(_, DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name))) {
         meta.willNotWorkOnGpu(
           s"user column ${DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name} " +
             "conflicts with the DV row index")
-      }
-      // The GPU Delta reader keeps VARIANT scans on CPU when the table may contain shredded
-      // files, and the CPU reader cannot produce the row index.
-      if (targetSchema.exists { field =>
-        TrampolineUtil.dataTypeExistsRecursively(field.dataType, GpuColumnVector.isVariantType)
-      }) {
-        meta.willNotWorkOnGpu(
-          "Persistent deletion vector writes on GPU are not supported for VARIANT columns")
       }
     }
     enabled

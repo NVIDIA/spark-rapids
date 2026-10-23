@@ -18,7 +18,7 @@ import pytest
 import re
 
 from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, \
-    is_databricks173_or_later, is_spark_353_or_later, is_spark_356_or_later, \
+    is_databricks143, is_databricks173_or_later, is_spark_353_or_later, is_spark_356_or_later, \
     is_spark_400_or_later, is_spark_local_mode, \
     with_cpu_session, with_gpu_session
 from asserts import assert_equal
@@ -56,8 +56,8 @@ delta_meta_allow = [
     "JsonToStructs"
 ]
 
-if is_databricks173_or_later():
-    # DBR 17.3 DV write/update paths can serialize Delta stats JSON on the CPU bridge.
+if is_databricks143() or is_databricks173_or_later():
+    # DBR 14.3 and 17.3 DV write/update paths can serialize Delta stats JSON on the CPU bridge.
     delta_meta_allow += ["StructsToJson", "CreateNamedStruct"]
 
 delta_write = ["RapidsDeltaWrite"]

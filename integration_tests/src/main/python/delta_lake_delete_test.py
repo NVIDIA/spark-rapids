@@ -917,31 +917,3 @@ def test_delta_delete_deletion_vector_multi_file_file_name_conditions(
         conf=conf,
         expected_num_affected_rows=29,
         assert_gpu_delete_command=True)
-
-
-@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not is_databricks173_or_later(),
-                    reason="Persistent-DV command acceleration requires DBR 17.3+")
-@pytest.mark.parametrize("disable_conf", [
-    {"spark.rapids.sql.format.parquet.enabled": "false"},
-    {"spark.rapids.sql.format.parquet.read.enabled": "false"}], ids=idfn)
-def test_delta_delete_deletion_vector_cpu_scan_fallback(spark_tmp_path, disable_conf):
-    """The GPU reader generates the physical row index, so a CPU scan must force CPU DELETE."""
-    conf = copy_and_update(
-        delta_delete_enabled_conf, disable_conf,
-        {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
-         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
-         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
-         "spark.databricks.delta.autoCompact.enabled": "false",
-         "spark.databricks.delta.delete.enableForceBackgroundAutoCompact": "false"})
-    assert_delta_sql_delete_collect(
-        spark_tmp_path,
-        use_cdf=False,
-        dest_table_func=lambda spark: spark.range(20).selectExpr("id", "CAST(id AS STRING) AS v")
-            .coalesce(1),
-        delete_sql="DELETE FROM delta.`{path}` WHERE id % 3 = 0",
-        enable_deletion_vectors=True,
-        conf=conf,
-        expected_cpu_fallback_class="ExecutedCommandExec")

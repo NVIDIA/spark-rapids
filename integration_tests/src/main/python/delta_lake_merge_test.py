@@ -1622,6 +1622,60 @@ def test_delta_merge_dv_index_only_target_scan(spark_tmp_path, reader_type):
     assert_equal(cpu_rows, gpu_rows)
 
 
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Index-only persistent-DV scans require DBR 17.3+")
+@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "PERFILE"])
+def test_delta_merge_dv_index_only_target_scan_fragmented(spark_tmp_path, reader_type):
+    """Alternating deleted rows make every surviving row its own range, across several batches."""
+    path = spark_tmp_path + "/DELTA_DATA"
+    conf = copy_and_update(delta_merge_enabled_conf, {
+        "spark.databricks.delta.merge.deletionVectors.persistent": "true",
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.databricks.delta.autoCompact.enabled": "false",
+        "spark.rapids.sql.format.parquet.reader.type": reader_type,
+        "spark.rapids.sql.reader.batchSizeRows": "1000"})
+    num_rows = 20000
+
+    def setup(spark):
+        setup_delta_dest_tables(
+            spark, path,
+            lambda session: session.range(num_rows).selectExpr("id", "id * 10 AS v", "0 AS p")
+                .coalesce(1),
+            use_cdf=False, enable_deletion_vectors=True, partition_columns=["p"])
+        for run in ("CPU", "GPU"):
+            spark.sql(f"DELETE FROM delta.`{path}/{run}` WHERE id % 2 = 0").collect()
+
+    def merge(spark, run):
+        spark.createDataFrame([(0,)], "p INT").createOrReplaceTempView("dv_fragmented_source")
+        return spark.sql(
+            f"MERGE INTO delta.`{path}/{run}` AS target USING dv_fragmented_source AS source "
+            "ON target.p = source.p WHEN MATCHED THEN UPDATE SET target.v = 100").collect()
+
+    with_cpu_session(setup, conf=conf)
+    cpu_result = with_cpu_session(lambda spark: merge(spark, "CPU"), conf=conf)
+    captured_plans = []
+    gpu_result = assert_rapids_delta_write(
+        lambda spark: merge(spark, "GPU"), conf=conf, expected_command="GpuMergeIntoCommand",
+        captured_plans_out=captured_plans)
+    assert_equal(cpu_result, gpu_result)
+    index_only_scans = [node for plan in captured_plans for node in collect_plan_nodes(plan)
+                        if node.getClass().getSimpleName() == "GpuFileSourceScanExec"
+                        and len(node.requiredSchema().fields()) == 1
+                        and node.requiredSchema().fields()[0].metadata().contains(
+                            "rapids.delta.internalRowIndex")]
+    assert index_only_scans, "No index-only GPU target scan was captured"
+    cpu_rows, gpu_rows = [with_cpu_session(
+        lambda spark, run=run: spark.read.format("delta").load(path + "/" + run)
+            .orderBy("id").collect(), conf=conf) for run in ("CPU", "GPU")]
+    assert [row.id for row in cpu_rows] == list(range(1, num_rows, 2))
+    assert all(row.v == 100 for row in cpu_rows)
+    assert_equal(cpu_rows, gpu_rows)
+
+
 @allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,"
                "BroadcastExchangeExec,DataWritingCommandExec",
                delta_write_fallback_allow, *delta_meta_allow)
@@ -1641,7 +1695,16 @@ def test_delta_merge_dv_index_only_target_scan(spark_tmp_path, reader_type):
             id="no_metadata_row_index"),
         pytest.param(
             {"spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "false"},
-            id="no_native_dv_pushdown")])
+            id="no_native_dv_pushdown"),
+        # The target scan must run on the GPU to produce physical row indexes.
+        pytest.param({"spark.rapids.sql.format.parquet.enabled": "false"},
+                     id="parquet_disabled"),
+        pytest.param({"spark.rapids.sql.format.parquet.read.enabled": "false"},
+                     id="parquet_read_disabled"),
+        pytest.param({"spark.rapids.sql.exec.FileSourceScanExec": "false"},
+                     id="file_scan_disabled"),
+        pytest.param({"spark.sql.legacy.parquet.nanosAsLong": "true"},
+                     id="legacy_nanos_as_long")])
 def test_delta_dml_deletion_vector_databricks_fallback(
         spark_tmp_path, spark_tmp_table_factory, command, unsupported_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
