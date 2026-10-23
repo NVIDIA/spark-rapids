@@ -456,7 +456,9 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
 
   // Overflow and decimal rounding checks can throw even when ANSI mode is disabled.
   override def hasSideEffects: Boolean = super.hasSideEffects || (child.dataType match {
-    case LongType | _: DecimalType => true
+    case LongType => true
+    // Up to 12 integer digits fit in Long microseconds; scales above 6 may need rounding.
+    case dt: DecimalType => dt.scale > 6 || dt.precision - dt.scale > 12
     case _ => false
   })
 
