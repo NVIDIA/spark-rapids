@@ -2222,8 +2222,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     wrapped.stop()
     if (!stopped) {
       stopped = true
-      server.foreach(_.close())
-      transport.foreach(_.close())
+      RapidsShuffleTransport.closeServerThenTransport(server, transport)
       if (rapidsConf.isMultiThreadedShuffleManagerMode) {
         RapidsShuffleInternalManagerBase.stopThreadPool()
       }

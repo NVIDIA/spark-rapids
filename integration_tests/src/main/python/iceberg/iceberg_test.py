@@ -784,6 +784,24 @@ def test_iceberg_read_fallback(format_version, spark_tmp_table_factory, disable_
         conf = {**iceberg_read_enabled_conf, disable_conf : "false"})
 
 
+@iceberg
+@pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
+@ignore_order(local=True)
+@allow_non_gpu('BatchScanExec', 'ColumnarToRowExec')
+def test_iceberg_encryption_read_fallback(spark_tmp_table_factory):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    df_gen = lambda spark: row_lineage_df(spark, length=128)
+    create_iceberg_table(
+        table_name,
+        table_prop={"format-version": "3", "encryption.key-id": "test-key"},
+        df_gen=df_gen)
+    with_cpu_session(lambda spark: df_gen(spark).writeTo(table_name).append())
+
+    assert_gpu_fallback_collect(
+        lambda spark: spark.table(table_name),
+        "BatchScanExec", conf=iceberg_write_enabled_conf)
+
+
 @iceberg_fast_test
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)

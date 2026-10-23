@@ -27,8 +27,7 @@ from iceberg import (
     supports_iceberg_v3, ICEBERG_V3_UNSUPPORTED_REASON, supports_iceberg_row_lineage_inheritance,
     ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, iceberg_table_properties_sql,
     row_lineage_df, rapids_reader_types)
-from marks import (allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order,
-                   datagen_overrides, iceberg_fast_test)
+from marks import allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order, datagen_overrides, iceberg_fast_test
 from spark_session import is_spark_400_or_later, with_gpu_session, with_cpu_session
 
 pytestmark = iceberg_unsupported_mark
@@ -218,6 +217,37 @@ def _do_test_iceberg_merge(
 def test_iceberg_merge(format_version, spark_tmp_table_factory, partition_col_sql, merge_mode):
     """Basic partition test - runs for all catalogs including remote."""
     _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode, format_version=format_version)
+
+
+@iceberg
+@pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
+@ignore_order(local=True)
+@allow_non_gpu('ReplaceDataExec', 'WriteDeltaExec', 'BatchScanExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize('merge_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
+def test_iceberg_merge_encryption_fallback(spark_tmp_table_factory, merge_mode, fallback_exec):
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    for suffix in ("_cpu", "_gpu"):
+        table = base_table_name + suffix
+        create_iceberg_table(
+            table, table_prop={"format-version": "3", "encryption.key-id": "test-key",
+                               "write.merge.mode": merge_mode},
+            df_gen=lambda spark: row_lineage_df(spark, length=128, with_value=True))
+        with_cpu_session(lambda spark: row_lineage_df(
+            spark, length=128, with_value=True).writeTo(table).append())
+
+    def merge_data(spark, table):
+        view = spark_tmp_table_factory.get()
+        row_lineage_df(spark, start=64, length=128, with_value=True, value_start=1000) \
+            .createOrReplaceTempView(view)
+        spark.sql(f"MERGE INTO {table} t USING {view} s ON t.id = s.id "
+                  "WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *")
+
+    assert_gpu_fallback_write_sql(
+        merge_data, lambda spark, table: spark.table(table),
+        base_table_name, [fallback_exec], conf=iceberg_merge_v3_enabled_conf)
 
 
 @iceberg_fast_test

@@ -26,8 +26,7 @@ from iceberg import (
     update_partition_transforms_distributed, supports_iceberg_v3, ICEBERG_V3_UNSUPPORTED_REASON,
     supports_iceberg_row_lineage_inheritance, ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON,
     row_lineage_df, rapids_reader_types)
-from marks import (allow_non_gpu, allow_non_gpu_conditional, disable_ansi_mode, iceberg,
-                   ignore_order, datagen_overrides, iceberg_fast_test)
+from marks import allow_non_gpu, allow_non_gpu_conditional, disable_ansi_mode, iceberg, ignore_order, datagen_overrides, iceberg_fast_test
 from spark_session import is_spark_400_or_later, with_cpu_session, with_gpu_session
 
 pytestmark = iceberg_unsupported_mark
@@ -148,6 +147,31 @@ def test_iceberg_update_unpartitioned_table_single_column(format_version, spark_
         update_mode=update_mode,
         format_version=format_version
     )
+
+
+@iceberg
+@pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
+@ignore_order(local=True)
+@allow_non_gpu('ReplaceDataExec', 'WriteDeltaExec', 'BatchScanExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize('update_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
+def test_iceberg_update_encryption_fallback(spark_tmp_table_factory, update_mode, fallback_exec):
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    for suffix in ("_cpu", "_gpu"):
+        create_iceberg_table_with_data(
+            base_table_name + suffix,
+            data_gen_func=lambda spark: row_lineage_df(spark, length=128, with_value=True),
+            table_properties={"encryption.key-id": "test-key"},
+            update_mode=update_mode, format_version="3")
+
+    def update_data(spark, table):
+        spark.sql(f"UPDATE {table} SET v = v + 100 WHERE id % 2 = 0")
+
+    assert_gpu_fallback_write_sql(
+        update_data, lambda spark, table: spark.table(table),
+        base_table_name, [fallback_exec], conf=iceberg_update_v3_enabled_conf)
 
 
 @iceberg_fast_test
