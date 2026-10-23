@@ -3236,7 +3236,10 @@ gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     date_gen, timestamp_gen,
     DecimalGen(precision=12, scale=2),
     DecimalGen(precision=36, scale=5),
-    null_gen] + array_gens_sample + struct_gens_sample
+    null_gen, binary_gen,
+    StructGen([('b', binary_gen)]),
+    ArrayGen(binary_gen),
+    StructGen([('a', ArrayGen(binary_gen))])] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -3266,6 +3269,32 @@ def test_min_max_in_groupby_and_reduction(data_gen):
         "hash_agg_table",
         'select min(a) from hash_agg_table',
         copy_and_update(_float_conf, {}))
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('values', [
+    [b'\x00', b'\x7f', b'\x80', b'\xff', None],
+    [b'\x80', b'\x80\x00', b'\x80\x00\xff', b'\x80\x01', None],
+    [b'', b'\x00', b'\xff', None],
+    [None],
+    # AQE may replace an empty grouped result with Spark's EmptyRelationExec.
+    pytest.param([], marks=allow_non_gpu('EmptyRelationExec'))],
+    ids=['unsigned', 'prefix', 'empty_binary', 'all_null', 'empty_input'])
+@pytest.mark.parametrize('grouped', [False, True], ids=['reduction', 'groupby'])
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=['no_aqe', 'aqe'])
+@pytest.mark.parametrize('batch_size', ['250', '1g'], ids=['small_batches', 'single_batch'])
+def test_min_max_binary(values, grouped, aqe_enabled, batch_size):
+    def do_it(spark):
+        # Exercise both single-buffer and multi-buffer partial aggregation across partitions.
+        rows = [(key, value) for _ in range(128) for key in range(3) for value in values]
+        schema = StructType([StructField('key', IntegerType(), False),
+                             StructField('value', BinaryType(), True)])
+        df = spark.createDataFrame(spark.sparkContext.parallelize(rows, 4), schema)
+        agg = df.groupBy('key') if grouped else df
+        return agg.agg(f.min('value'), f.max('value'))
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={
+        'spark.rapids.sql.batchSizeBytes': batch_size,
+        'spark.sql.adaptive.enabled': aqe_enabled})
 
 # Some Spark implementations will optimize this aggregation as a
 # complete aggregation (i.e.: only one aggregation node in the plan)

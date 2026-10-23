@@ -24,7 +24,7 @@ from conftest import is_not_utc
 from datetime import timezone
 from conftest import is_databricks_runtime
 from marks import (approximate_float, allow_non_gpu, allow_non_gpu_conditional,
-                   ignore_order, datagen_overrides)
+                   ignore_order, datagen_overrides, validate_execs_in_gpu_plan)
 from spark_session import *
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -166,6 +166,72 @@ def read_json_sql(data_path, schema, spark_tmp_table_factory, options = {}):
         tmp_name = spark_tmp_table_factory.get()
         return spark.catalog.createTable(tmp_name, source='json', path=data_path, **opts)
     return read_impl
+
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ['', 'json'])
+@pytest.mark.parametrize('reader_batch_bytes', [1, 1024 * 1024])
+@pytest.mark.parametrize('max_partition_bytes', [32, 1024 * 1024])
+@pytest.mark.parametrize('encoding', [None, 'UTF-8', 'US-ASCII'])
+def test_json_bom_at_batch_and_partition_boundaries(spark_tmp_path, v1_enabled_list,
+                                                   reader_batch_bytes, max_partition_bytes,
+                                                   encoding):
+    data_path = spark_tmp_path + '/JSON_BOM'
+    records = [
+        '\ufeff{"a":0,"b":"first"}',
+        '\ufeff{"a":1,"b":"one"}',
+        '\ufeff \t{"a":2,"b":"two"}',
+        ' \ufeff{"a":3,"b":"invalid"}',
+        '\ufeff\ufeff{"a":4,"b":"invalid"}',
+        '\ufeff',
+        '\ufeff \t',
+    ]
+    if encoding != 'US-ASCII':
+        records.append('{"a":5,"b":"\ufeffquoted"}')
+    records.append('{"a":6,"b":"last"}')
+    with_cpu_session(lambda spark: spark.createDataFrame([(line,) for line in records], ['value'])
+                     .coalesce(1).write.text(data_path))
+    schema = StructType([StructField('a', IntegerType()), StructField('b', StringType())])
+    options = {'encoding': encoding, 'lineSep': '\n'} if encoding else {}
+    conf = copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.reader.batchSizeBytes': str(reader_batch_bytes),
+        'spark.sql.files.maxPartitionBytes': str(max_partition_bytes),
+        'spark.sql.files.openCostInBytes': '0',
+        'spark.sql.files.minPartitionNum': '1',
+    })
+    if max_partition_bytes == 32:
+        # The preceding record crosses byte 32, so the BOM record at byte 44 starts this split.
+        starts = with_cpu_session(
+            lambda spark: spark.read.text(data_path).where(f.col('value') == records[2])
+                .selectExpr('input_file_block_start() AS block_start').collect(), conf=conf)
+        assert [row.block_start for row in starts] == [32]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).options(**options).json(data_path), conf=conf)
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('v1_enabled_list', ['', 'json'])
+@pytest.mark.parametrize('reader_batch_bytes', [1, 1024 * 1024])
+@pytest.mark.parametrize('encoding', [None, 'UTF-8', 'US-ASCII'])
+@pytest.mark.parametrize('empty_only', [False, True])
+def test_json_empty_root_arrays(spark_tmp_path, v1_enabled_list, reader_batch_bytes,
+                                encoding, empty_only):
+    data_path = spark_tmp_path + '/JSON_EMPTY_ARRAYS'
+    empty_arrays = ['[]', ' [ \t ] ', '[]']
+    if empty_only:
+        records = empty_arrays
+    else:
+        records = ['{"a":0,"b":"first"}'] + empty_arrays + [
+            '\ufeff[]', '\ufeff \t[ \t ]', ' \ufeff[]', '{"a":1,"b":"last"}']
+    with_cpu_session(lambda spark: spark.createDataFrame([(line,) for line in records], ['value'])
+                     .coalesce(1).write.text(data_path))
+    schema = StructType([StructField('a', IntegerType()), StructField('b', StringType())])
+    options = {'encoding': encoding, 'lineSep': '\n'} if encoding else {}
+    conf = copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.reader.batchSizeBytes': str(reader_batch_bytes),
+    })
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).options(**options).json(data_path), conf=conf)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
@@ -2045,7 +2111,7 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_supported_format(zon
         conf=conf)
 
 @pytest.mark.parametrize('zone_id', [
-    "UTC",
+    pytest.param("UTC", marks=validate_execs_in_gpu_plan('GpuProjectExec') if not is_not_utc() else []),
     pytest.param("-08:00", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("+01:00", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("Africa/Dakar", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
@@ -2053,11 +2119,15 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_supported_format(zon
     pytest.param("Asia/Urumqi", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("Asia/Hong_Kong", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("Europe/Brussels", marks=pytest.mark.allow_non_gpu('JsonToStructs'))], ids=idfn)
-@allow_non_gpu_conditional(is_not_utc(), 'JsonToStructs')
+@allow_non_gpu_conditional(is_not_utc(), 'JsonToStructs', 'ProjectExec')
 def test_spark_from_json_timestamp_format_option_zoneid_but_default_format(zone_id):
     schema = StructType([StructField("t", TimestampType())])
     data = [[r'''{"t": "2016-01-01 00:00:00"}'''],
-        [r'''{"t": "2023-07-27 12:21:05"}''']]
+        [r'''{"t": "2023-07-27 12:21:05"}'''],
+        [r'''{"t": "6395-12-21T56:86:40.205705Z"}'''],
+        [r'''{"t": "2023-01-01T24:00:00Z"}'''],
+        [r'''{"t": "2023-01-01T00:60:00Z"}'''],
+        [r'''{"t": "2023-01-01T00:00:60Z"}''']]
     conf = copy_and_update(_enable_all_types_conf, {"spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timeZone': zone_id})),

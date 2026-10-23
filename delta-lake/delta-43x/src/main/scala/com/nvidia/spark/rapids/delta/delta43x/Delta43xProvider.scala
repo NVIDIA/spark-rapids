@@ -27,16 +27,18 @@ import com.nvidia.spark.rapids.delta.common.{GpuDelta4xParquetFileFormat, GpuDel
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.connector.catalog.{Identifier, StagingTableCatalog, SupportsWrite,
   TableCatalog}
 import org.apache.spark.sql.delta.{CatalogOwnedTableFeature, DeltaConfigs,
-  DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat, IcebergCompat,
-  MaterializePartitionColumnsTableFeature}
+  DeltaDynamicPartitionOverwriteCommand, DeltaLog, DeltaOptions, DeltaParquetFileFormat,
+  IcebergCompat, MaterializePartitionColumnsTableFeature}
 import org.apache.spark.sql.delta.actions.TableFeatureProtocolUtils
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaCatalogRestApiShim, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand,
-  UpdateCommand}
+  UpdateCommand, WriteIntoDelta}
 import org.apache.spark.sql.delta.coordinatedcommits.CatalogOwnedTableUtils
 import org.apache.spark.sql.delta.serverSidePlanning.ServerSidePlannedTable
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -56,6 +58,32 @@ object Delta43xProvider extends DeltaProviderBase with Logging {
     "Delta 4.3 non-Delta catalog writes must run on CPU"
 
   override protected def getCDFRelationStrategy = Delta43xCDFRelationStrategy
+
+  override protected def getDeltaLogForV1Write(
+      spark: SparkSession,
+      deltaTable: DeltaTableV2): DeltaLog = deltaTable.deltaLog
+
+  override protected def getCatalogTableForV1Write(
+      deltaTable: DeltaTableV2): Option[CatalogTable] = deltaTable.catalogTable
+
+  override protected def getRecachePlanForV1Write(
+      deltaLog: DeltaLog,
+      deltaTable: DeltaTableV2): LogicalPlan = deltaTable.toLogicalRelation
+
+  override protected def getRefreshTableNameForV1Write(
+      deltaTable: DeltaTableV2): Option[String] =
+    deltaTable.catalogTable.map(_.identifier.quotedString)
+
+  override protected def createWriteIntoDelta(
+      deltaLog: DeltaLog,
+      mode: SaveMode,
+      options: DeltaOptions,
+      configuration: Map[String, String],
+      data: DataFrame,
+      catalogTable: Option[CatalogTable]): WriteIntoDelta = {
+    // Resolve the constructor and its default arguments against Delta 4.3.
+    WriteIntoDelta(deltaLog, mode, options, Nil, configuration, data, catalogTable)
+  }
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = {
     super.isSupportedCatalog(catalogClass) ||
@@ -277,7 +305,8 @@ object Delta43xProvider extends DeltaProviderBase with Logging {
 
   override protected def toGpuParquetFileFormat(conf: RapidsConf, fmt: DeltaParquetFileFormat)
   : FileFormat = {
-    if (isPushDVPredicateDownEnabled(conf)) {
+    val needsGeneratedRowIndex = !fmt.optimizationsEnabled && !fmt.hasTablePath
+    if (isPushDVPredicateDownEnabled(conf) && !needsGeneratedRowIndex) {
       GpuDeltaParquetFileFormat2(
         protocol = fmt.protocol,
         metadata = fmt.metadata,

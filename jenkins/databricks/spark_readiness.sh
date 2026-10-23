@@ -179,6 +179,8 @@ fi
 printf 'Spark readiness %s: starting plugin-free check (master=%s, timeout=10m)\n' "$1" "$master"
 printf '{"phase":"STARTING","runtime":"%s"}\n' "$1" > "$status_file"
 
+# DBR 18.3 spark-shell exhausts the default 1 GiB heap during Scala compiler classpath
+# initialization, before the readiness job runs. Use 2 GiB, which passed repeated native probes.
 # spark-shell may exit zero after an initialization error; also require the completed job marker.
 set +e
 # Print the actual driver JVM's version and maximum heap without changing its heap
@@ -186,6 +188,7 @@ set +e
 SPARK_SUBMIT_OPTS="$readiness_jvm_options" \
 timeout --kill-after=30s 10m "${SPARK_HOME:?}/bin/spark-shell" \
     --master "$master" \
+    --driver-memory 2g \
     --conf spark.plugins= \
     --conf spark.shuffle.manager=sort \
     --conf spark.deploy.maxExecutorRetries=0 \
@@ -199,6 +202,14 @@ if [[ "${statuses[0]}" == 0 && "${statuses[1]}" == 0 ]] &&
     grep -qx 'DATABRICKS_SPARK_READINESS_OK' "$log_file"; then
     printf '{"phase":"READY","runtime":"%s"}\n' "$1" > "$status_file"
     printf 'Spark readiness %s: READY\n' "$1"
+    # Take one full GPU snapshot after native readiness, not again for upstream Spark.
+    if [[ "$1" == databricks ]]; then
+        {
+            printf '\n=== Databricks GPU diagnostics ===\n'
+            diagnostic nvidia-smi -q
+            printf '=== End Databricks GPU diagnostics ===\n'
+        } || :
+    fi
     exit 0
 fi
 

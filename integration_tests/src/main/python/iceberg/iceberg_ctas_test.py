@@ -12,23 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime, timezone
 from typing import Callable, Dict, Optional
 
 import pytest
 import pyspark.sql.functions as F
-from pyspark.sql.types import ArrayType, BinaryType
+from pyspark.sql.types import ArrayType, BinaryType, TimestampType
 
 from asserts import (assert_cpu_and_gpu_are_equal_collect_with_capture,
                      assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect,
-                     assert_gpu_fallback_collect, assert_gpu_fallback_write, collect_plan_nodes)
+                     assert_gpu_fallback_collect, assert_gpu_fallback_write,
+                     assert_gpu_fallback_write_sql, collect_plan_nodes)
 from conftest import is_iceberg_remote_catalog, spark_jvm
-from data_gen import gen_df, copy_and_update, RepeatSeqGen
+from data_gen import gen_df, copy_and_update, long_gen, RepeatSeqGen
 from iceberg import (
     iceberg_format_versions, create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list,
     iceberg_full_gens_list, get_full_table_name, iceberg_write_enabled_conf,
     iceberg_unsupported_mark, _build_tblprops, ctas_partition_transforms, supports_iceberg_v3,
     ICEBERG_V3_UNSUPPORTED_REASON, supports_iceberg_row_lineage_inheritance,
-    ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, row_lineage_df)
+    ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, row_lineage_df, read_parquet_schema)
 from marks import (iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional,
                    datagen_overrides)
 from spark_session import (with_gpu_session, with_cpu_session, is_spark_400_or_later,
@@ -110,6 +112,7 @@ def _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
     cpu_data = with_cpu_session(lambda spark: read_table(spark, cpu_table).collect(), conf=conf)
     gpu_data = with_cpu_session(lambda spark: read_table(spark, gpu_table).collect(), conf=conf)
     assert_equal_with_local_sort(cpu_data, gpu_data)
+    return cpu_table, gpu_table
 
 
 @iceberg
@@ -123,6 +126,99 @@ def test_ctas_unpartitioned_table(format_version, spark_tmp_table_factory):
     df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
 
     _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory, df_gen, table_prop)
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Requires footer access through Hadoop")
+@pytest.mark.parametrize(
+    "datetime_rebase_mode", ["LEGACY", "EXCEPTION"],
+    ids=lambda mode: f"datetime_rebase_mode={mode.lower()}")
+def test_ctas_gpu_timestamp_uses_iceberg_micros_and_has_metrics(
+        spark_tmp_table_factory, datetime_rebase_mode):
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.parquet.outputTimestampType": "INT96",
+        "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
+        "spark.sql.parquet.datetimeRebaseModeInWrite": datetime_rebase_mode
+    })
+
+    def timestamp_df(spark):
+        return gen_df(spark, [
+            ("unique_id", long_gen),
+            ("sale_datetime", RepeatSeqGen([
+                datetime(1000, 1, 1, tzinfo=timezone.utc),
+                datetime(1582, 10, 4, tzinfo=timezone.utc),
+                datetime(1582, 10, 15, tzinfo=timezone.utc),
+                datetime(2000, 1, 1, tzinfo=timezone.utc)
+            ], data_type=TimestampType()))
+        ], length=200)
+
+    def assert_gpu_ctas(_cpu_plan, plan):
+        callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+        ctas_plan = callback.extractExecutedPlan(plan)
+        callback.assertContains(ctas_plan, "GpuAtomicCreateTableAsSelectExec")
+        callback.assertNotContain(ctas_plan, "AtomicCreateTableAsSelectExec")
+
+    _, gpu_table = _assert_gpu_equals_cpu_ctas(
+        spark_tmp_table_factory,
+        timestamp_df,
+        {"format-version": "2"},
+        conf=conf,
+        gpu_plan_assertion=assert_gpu_ctas)
+
+    def assert_timestamp_file_metadata(spark):
+        iceberg_table = spark_jvm().org.apache.iceberg.spark.Spark3Util.loadIcebergTable(
+            spark._jsparkSession, gpu_table)
+        planned_files = iceberg_table.newScan().includeColumnStats().planFiles()
+        try:
+            iterator = planned_files.iterator()
+            data_files = []
+            while iterator.hasNext():
+                data_files.append(iterator.next().file())
+        finally:
+            planned_files.close()
+
+        assert data_files, f"no files found in {gpu_table}"
+        data_file_paths = []
+        for data_file in data_files:
+            data_file_path = data_file.path()
+            data_file_paths.append(data_file_path)
+            physical_schema = read_parquet_schema(spark, data_file_path)
+            assert "int64 sale_datetime (TIMESTAMP(MICROS,true)) = 2" in physical_schema
+            assert "int96 sale_datetime" not in physical_schema.lower()
+            metrics = {
+                "value_counts": data_file.valueCounts(),
+                "null_value_counts": data_file.nullValueCounts(),
+                "lower_bounds": data_file.lowerBounds(),
+                "upper_bounds": data_file.upperBounds()
+            }
+            for metric_name, metric in metrics.items():
+                assert metric is not None and metric.containsKey(2), \
+                    f"field ID 2 missing from {metric_name}: {metric}"
+
+        iceberg_rows = spark.table(gpu_table).collect()
+        parquet_rows = spark.read.parquet(*data_file_paths).collect()
+        assert_equal_with_local_sort(iceberg_rows, parquet_rows)
+
+    with_cpu_session(assert_timestamp_file_metadata, conf=conf)
+
+
+@iceberg
+@pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
+@ignore_order(local=True)
+@allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec')
+def test_ctas_encryption_fallback(spark_tmp_table_factory):
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+
+    def run_ctas(spark, table):
+        _execute_ctas(
+            spark, table, spark_tmp_table_factory,
+            lambda sp: row_lineage_df(sp, length=128),
+            {"format-version": "3", "encryption.key-id": "test-key"}, ret=False)
+
+    assert_gpu_fallback_write_sql(
+        run_ctas, lambda spark, table: spark.table(table),
+        base_table_name, ["AtomicCreateTableAsSelectExec"], conf=iceberg_write_enabled_conf)
 
 
 @iceberg

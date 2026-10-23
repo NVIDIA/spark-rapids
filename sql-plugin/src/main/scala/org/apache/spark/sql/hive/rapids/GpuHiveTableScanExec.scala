@@ -55,7 +55,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 /**
- * RAPIDS replacement for the [[org.apache.spark.sql.hive.execution.HiveTableScanExec]],
+ * RAPIDS replacement for the `org.apache.spark.sql.hive.execution.HiveTableScanExec`,
  * for supporting reading Hive delimited text format.
  *
  * While the HiveTableScanExec supports all the data formats that Hive does,
@@ -584,7 +584,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
 
   /**
-   * Override of [[com.nvidia.spark.rapids.GpuTextBasedPartitionReader.castStringToDate()]],
+   * Override of [[com.nvidia.spark.rapids.GpuTextBasedPartitionReader#castStringToDate]],
    * to convert parsed string columns to Dates.
    * Two key differences from the base implementation, to comply with Hive LazySimpleSerDe
    * semantics:
