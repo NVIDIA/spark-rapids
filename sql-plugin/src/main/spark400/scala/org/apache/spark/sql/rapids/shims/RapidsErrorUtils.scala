@@ -25,10 +25,9 @@
 {"spark": "412"}
 {"spark": "413"}
 {"spark": "420"}
-{"spark": "500"}
 spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
 
-object RapidsErrorUtils extends RapidsErrorUtils340PlusBase
+object RapidsErrorUtils extends RapidsErrorUtils340To420Base
   with SequenceSizeExceededLimitErrorBuilder with ArrayInvalidArgumentErrorUtils

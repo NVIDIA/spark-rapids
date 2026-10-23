@@ -27,8 +27,8 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
-import com.nvidia.spark.rapids.iceberg.{GpuIcebergSpecPartitioner, IcebergFormatVersionSupport,
-  ShimUtils}
+import com.nvidia.spark.rapids.iceberg.{GpuIcebergSpecPartitioner, IcebergEncryptionSupport,
+  IcebergFormatVersionSupport, ShimUtils}
 import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import org.apache.hadoop.mapreduce.Job
 import org.apache.iceberg._
@@ -47,6 +47,7 @@ import org.apache.spark.sql.connector.write.{DataWriter, _}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.{LongType, StructType}
@@ -130,11 +131,18 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
       tmpJob
     }
 
-    val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
+    // Iceberg's Parquet writers always encode timestamps as INT64 microseconds and preserve
+    // proleptic-Gregorian values; they do not inherit Spark's Parquet timestamp or rebase settings.
+    // The GPU path reuses Spark's Parquet writer, so force the equivalent physical type and rebase
+    // mode here. Otherwise, session settings such as INT96 or LEGACY would change Iceberg's file
+    // semantics.
+    val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithTimestampOverrides(
       SparkSession.active,
       job,
       GpuSparkWrite.translateIcebergWriteProperties(writeProps.asScala.toMap),
-      dsSchema
+      dsSchema,
+      ParquetOutputTimestampType.TIMESTAMP_MICROS,
+      DateTimeRebaseCorrected
     )
 
     val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)
@@ -281,6 +289,7 @@ object GpuSparkWrite {
     val partitionSpec = table.spec()
 
     IcebergFormatVersionSupport.tagForFormatVersion(table, meta)
+    IcebergEncryptionSupport.tagForWrite(table, meta)
 
     val dsSchema = GpuSparkWriteAccess.dsSchema(cpuWrite)
     val writeSchema = GpuSparkWriteAccess.writeSchema(cpuWrite)
@@ -307,9 +316,10 @@ object GpuSparkWrite {
       .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
       .asScala.toMap
     // Catalog defaults and overrides are applied later when Iceberg stages the table. If they
-    // select v3, the nested append is tagged against that staged table and falls back to CPU, so
-    // only an explicit format version in the statement needs to be checked here.
+    // select unsupported features, the nested append is tagged against that staged table, so
+    // only explicit format version and encryption properties need to be checked here.
     IcebergFormatVersionSupport.tagForFormatVersion(properties, meta)
+    IcebergEncryptionSupport.tagForWrite(properties, meta)
     val fileFormatStr = properties.getOrElse(TableProperties.DEFAULT_FILE_FORMAT,
       TableProperties.DEFAULT_FILE_FORMAT_DEFAULT)
 
@@ -341,9 +351,10 @@ object GpuSparkWrite {
       .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
       .asScala.toMap
     // Existing table metadata and catalog properties are resolved later while Iceberg stages the
-    // replacement. The nested write is then tagged against the resulting table and handles the v3
-    // fallback, so neither the catalog nor the existing table needs to be loaded here.
+    // replacement. The nested write is tagged against that table for format version and encryption
+    // support, so neither the catalog nor the existing table needs to be loaded here.
     IcebergFormatVersionSupport.tagForFormatVersion(properties, meta)
+    IcebergEncryptionSupport.tagForWrite(properties, meta)
     val fileFormatStr = properties.getOrElse(TableProperties.DEFAULT_FILE_FORMAT,
       TableProperties.DEFAULT_FILE_FORMAT_DEFAULT)
 

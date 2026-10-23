@@ -91,7 +91,7 @@ case class FilterToAstConverter(
     // infers one beside most predicates): it changes no result but costs a per-row evaluation and
     // a per-row-group null statistic.
     val provenNotNull = converted.collect {
-      // Multiple null checks don't cancel each other out: one must be a non-null check.
+      // A not-null check proves nothing here, or IsNotNull(c) would make itself redundant.
       case (conjunct, Some(_)) if FilterToAstConverter.notNullCheckColumn(conjunct).isEmpty =>
         FilterToAstConverter.columnsProvenNotNull(conjunct).map(normalize)
     }.flatten.toSet

@@ -772,6 +772,24 @@ def test_iceberg_read_fallback(format_version, spark_tmp_table_factory, disable_
 
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
+@ignore_order(local=True)
+@allow_non_gpu('BatchScanExec', 'ColumnarToRowExec')
+def test_iceberg_encryption_read_fallback(spark_tmp_table_factory):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    df_gen = lambda spark: row_lineage_df(spark, length=128)
+    create_iceberg_table(
+        table_name,
+        table_prop={"format-version": "3", "encryption.key-id": "test-key"},
+        df_gen=df_gen)
+    with_cpu_session(lambda spark: df_gen(spark).writeTo(table_name).append())
+
+    assert_gpu_fallback_collect(
+        lambda spark: spark.table(table_name),
+        "BatchScanExec", conf=iceberg_write_enabled_conf)
+
+
+@iceberg
+@pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @ignore_order(local=True)
 def test_iceberg_v3_read_fallback(spark_tmp_table_factory):
@@ -1158,20 +1176,46 @@ def test_iceberg_alter_column_type(format_version, spark_tmp_table_factory, read
     table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
-        df = three_col_df(spark, int_gen, float_gen, DecimalGen(precision=7, scale=3))
+        df = gen_df(spark, [
+            ('a', int_gen), ('b', float_gen), ('c', DecimalGen(precision=7, scale=3)),
+            ('array_int', ArrayGen(int_gen, max_length=4)),
+            ('array_struct', ArrayGen(StructGen([
+                ('id', int_gen), ('payload', string_gen)]), max_length=4)),
+            ('struct_array', StructGen([
+                ('values', ArrayGen(int_gen, max_length=4)), ('label', string_gen)]))])
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   iceberg_table_properties_sql(format_version) + " AS SELECT * FROM {}".format(tmpview))
+        iceberg_table = spark._jvm.org.apache.iceberg.spark.Spark3Util.loadIcebergTable(
+            spark._jsparkSession, table)
+        nested_fields = ['array_int.element', 'array_struct.element.id',
+                         'array_struct.element.payload', 'struct_array.values.element']
+        field_ids = {name: iceberg_table.schema().findField(name).fieldId()
+                     for name in nested_fields}
         spark.sql("ALTER TABLE {} ALTER COLUMN a TYPE BIGINT".format(table))
         spark.sql("ALTER TABLE {} ALTER COLUMN b TYPE DOUBLE".format(table))
         spark.sql("ALTER TABLE {} ALTER COLUMN c TYPE DECIMAL(17, 3)".format(table))
-        df = three_col_df(spark, long_gen, double_gen, DecimalGen(precision=17, scale=3))
+        for name in ['array_int.element', 'array_struct.element.id', 'struct_array.values.element']:
+            spark.sql(f"ALTER TABLE {table} ALTER COLUMN {name} TYPE BIGINT")
+        iceberg_table.refresh()
+        assert field_ids == {name: iceberg_table.schema().findField(name).fieldId()
+                             for name in nested_fields}
+        # Old files require nested promotion; appended files already have the evolved types.
+        df = gen_df(spark, [
+            ('a', long_gen), ('b', double_gen), ('c', DecimalGen(precision=17, scale=3)),
+            ('array_int', ArrayGen(long_gen, max_length=4)),
+            ('array_struct', ArrayGen(StructGen([
+                ('id', long_gen), ('payload', string_gen)]), max_length=4)),
+            ('struct_array', StructGen([
+                ('values', ArrayGen(long_gen, max_length=4)), ('label', string_gen)]))])
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
     with_cpu_session(setup_iceberg_table)
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
+        exist_classes='GpuBatchScanExec',
+        require_non_empty=True,
         conf={**iceberg_read_enabled_conf, 'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 @iceberg
