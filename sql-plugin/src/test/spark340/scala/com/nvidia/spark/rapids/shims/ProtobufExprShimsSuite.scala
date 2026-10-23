@@ -142,10 +142,12 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       def fieldNames: Seq[String] = Seq("id", "empty")
     }
     val schema = StructType(Seq(StructField("id", IntegerType)))
-    assert(SparkProtobufCompat.checkNoFieldsMissingFromSchema(schema, descriptor) ==
-      Left("root message has fields missing from the Spark schema: empty"))
     assert(SparkProtobufCompat.checkNoFieldsMissingFromSchema(
-      schema.add("empty", StructType(Seq(StructField("x", IntegerType)))), descriptor).isRight)
+      schema, descriptor, "protobuf field 'child'") ==
+      Left("protobuf field 'child' has fields missing from the Spark schema: empty"))
+    assert(SparkProtobufCompat.checkNoFieldsMissingFromSchema(
+      schema.add("empty", StructType(Seq(StructField("x", IntegerType)))), descriptor,
+      "root message").isRight)
   }
 
   private def twoFieldSchemaArrays(): FlattenedSchemaArrays = FlattenedSchemaArrays(

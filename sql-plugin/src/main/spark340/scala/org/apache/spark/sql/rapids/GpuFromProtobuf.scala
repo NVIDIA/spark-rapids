@@ -64,10 +64,11 @@ import org.apache.spark.sql.types._
  * This is designed to replace `org.apache.spark.sql.protobuf.ProtobufDataToCatalyst` when
  * supported.
  *
- * The schema uses the JNI flattened representation. The planner currently emits only top-level
- * fields, so every entry has parentIndices == -1, depthLevels == 0 and isOutput == true.
+ * The schema uses the JNI flattened representation: nested message fields follow their parent
+ * entry and point to it through parentIndices. The planner decodes and returns every field, so
+ * every entry has isOutput == true.
  *
- * @param decodedSchema Spark output schema, one field per flattened entry
+ * @param decodedSchema Spark output schema
  * @param schema Flattened JNI schema; callers must not mutate its arrays after construction.
  * @param failOnErrors If true, throw on malformed data; otherwise return null for malformed rows
  * @param child BinaryType expression containing serialized protobuf messages

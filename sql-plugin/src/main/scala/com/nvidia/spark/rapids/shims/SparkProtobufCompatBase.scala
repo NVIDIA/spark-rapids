@@ -118,10 +118,11 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
    */
   def checkNoFieldsMissingFromSchema(
       schema: StructType,
-      desc: ProtobufMessageDescriptor): Either[String, Unit] = {
+      desc: ProtobufMessageDescriptor,
+      location: String): Either[String, Unit] = {
     val omitted = desc.fieldNames.filterNot(schema.fieldNames.contains)
     Either.cond(omitted.isEmpty, (),
-      s"root message has fields missing from the Spark schema: ${omitted.mkString(", ")}")
+      s"$location has fields missing from the Spark schema: ${omitted.mkString(", ")}")
   }
 
   /** Resolves the schema or returns a failure reason; lazy metadata reads may still throw. */
