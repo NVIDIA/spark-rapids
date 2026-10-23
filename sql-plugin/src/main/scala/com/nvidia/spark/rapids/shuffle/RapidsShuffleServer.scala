@@ -91,6 +91,23 @@ class CatalogShuffleRequestHandler(catalog: ShuffleBufferCatalog)
  * A single command thread is used to orchestrate sends/receives and to remove
  * from transport's progress thread.
  *
+ * Close shuts the transfer reply gate before waiting for admitted queue attempts. A reply
+ * decided while open still needs admission immediately before queueing.
+ * {{{
+ * [open] -- close --> [closing] -- queue attempts end --> [closed]
+ *
+ * reply decided while open --> [decided] -- gate open --> [queueing]
+ *                                  |                         |
+ *                             gate closed             returns or throws
+ *                                  v                         v
+ *                              [released]               [attempt ended]
+ * reply decided while closing or closed --> no reply
+ * }}}
+ *
+ * No reply is admitted once closing starts. Close waits for admitted queue attempts, including
+ * throws, then waits a bounded time for the send loop. Closed means close returned.
+ * Close does not wait for delivery or callbacks. Metadata replies do not use this gate.
+ *
  * @param transport the transport we were configured with
  * @param serverConnection a connection object, which contains functions to send/receive
  * @param originalShuffleServerId spark's `BlockManagerId` for this executor
@@ -126,8 +143,49 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   @volatile private[this] var started = true
 
+  // The transfer responses, error replies included, that `replyGate` let through and that are
+  // still being queued. Guarded by the `bssExec` monitor, with `started`, so that close can wait
+  // for them.
+  private[this] var repliesQueueing = 0
+
+  /**
+   * This server's reply gate, open while `started`. It counts the replies it lets through in
+   * `repliesQueueing`, and close waits for that count without a bound, since queueing a reply
+   * takes no blocking call.
+   */
+  private[this] object replyGate extends BufferSendState.ReplyGate {
+    override def queueIfOpen(queue: => Unit): Boolean = {
+      val open = bssExec.synchronized {
+        if (started) {
+          repliesQueueing += 1
+        }
+        started
+      }
+      if (open) {
+        try {
+          queue
+        } finally {
+          bssExec.synchronized {
+            repliesQueueing -= 1
+            // only a closing server waits for the count, so the send loop is not woken here
+            if (!started && repliesQueueing == 0) {
+              bssExec.notifyAll()
+            }
+          }
+        }
+      }
+      open
+    }
+  }
+
   private[shuffle] def currentTimeNanos(): Long = System.nanoTime()
 
+  /**
+   * How long a reader waits for its next batch, `spark.network.timeout`. A request's sends retry
+   * a materialization OOM until this wait less a margin has passed since the request arrived, so
+   * that the error reply reaches a reader still waiting. `RapidsShuffleServer.oomRetryNanos`
+   * subtracts the margin.
+   */
   private[shuffle] def oomRetryTimeoutNanos: Long =
     TimeUnit.SECONDS.toNanos(GpuShuffleEnv.shuffleFetchTimeoutSeconds)
 
@@ -146,7 +204,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     val failure = new IllegalStateException(
       s"Unable to prepare shuffle sends. $reason These sends will not be retried.")
     errors.foreach(failure.addSuppressed)
-    states.foreach(_.finish(BufferSendState.OomExpired))
+    states.foreach(_.finish(BufferSendState.OomExpired,
+      errorReply(BufferSendState.OomExpired, failure)))
     logError(failure.getMessage, failure)
     bssExec.synchronized {
       bssExec.notifyAll()
@@ -290,7 +349,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         } catch {
           case NonFatal(t) =>
             // no send has been issued in this pass yet, so these states can end here
-            bssToIssue.foreach(_.finish(BufferSendState.Failed))
+            bssToIssue.foreach(_.finish(BufferSendState.Failed,
+              errorReply(BufferSendState.Failed, t)))
             bssToIssue.clear()
             if (BufferSendState.endsSendLoop(t)) {
               throw t
@@ -328,8 +388,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   /**
    * Builds the send state of a transfer request. If its lookups fail, nothing was sent and the
-   * request is not retried: the bounce buffers and the request transaction are released here,
-   * and the requester times out waiting for a reply.
+   * request is not retried: this method releases the bounce buffers, sends the requester an
+   * error reply if it can, and closes the request transaction.
    */
   private def newSendState(
       pendingTransfer: PendingTransferResponse,
@@ -339,10 +399,12 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         pendingTransfer.tx,
         sendBounceBuffers,
         pendingTransfer.requestHandler,
-        serverStream))
+        serverStream,
+        pendingTransfer.arrivalNanos))
     } catch {
       case NonFatal(t) =>
-        if (isOutputGone(t)) {
+        val gone = isOutputGone(t)
+        if (gone) {
           // expected after an unregister, possibly once per request, so the trace is debug only
           logWarning(s"Unable to start transfer request ${pendingTransfer.tx}: the requested " +
               s"shuffle output is gone (${t.getMessage}). It will not be retried.")
@@ -352,6 +414,19 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               "It will not be retried.", t)
         }
         closeQuietly("send bounce buffers", sendBounceBuffers)
+        // a request whose own receive failed has no header to answer
+        if (pendingTransfer.tx.getStatus == TransactionStatus.Success) {
+          val requested = t match {
+            case e: BufferLookupException => e.tableIds
+            case _ => Seq.empty
+          }
+          errorReply(if (gone) BufferSendState.MissingOutput else BufferSendState.Failed, t)
+            .foreach { reply =>
+              BufferSendState.sendErrorReply(pendingTransfer.tx, reply.gate,
+                new RefCountedDirectByteBuffer(
+                  ShuffleMetadata.buildTransferErrorResponse(requested, reply.reason)))
+            }
+        }
         closeQuietly("a transfer request", pendingTransfer.tx)
         None
     }
@@ -393,9 +468,29 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   private def isOutputGone(error: Throwable): Boolean = error match {
     case _: ShuffleOutputGoneException => true
+    case e: BufferLookupException => isOutputGone(e.getCause)
     case ex: RapidsShuffleSendPrepareException =>
       ex.getCause.isInstanceOf[ShuffleOutputGoneException]
     case _ => false
+  }
+
+  /**
+   * The error reply for a request that ended with `outcome` because of `cause`. There is none
+   * when `cause` ends the send loop, since the executor then exits and the requester hears of it
+   * when its connection closes. There is none once the server is closing either, which saves
+   * building a reply that `replyGate` would not let through. The send loop can still be running
+   * then, since the server's close and the transport's each wait for it a bounded time. A caller
+   * that ends several states calls this once per state, since the server can close between two
+   * of them.
+   */
+  private def errorReply(
+      outcome: BufferSendState.Outcome,
+      cause: Throwable): Option[BufferSendState.ErrorReply] = {
+    if (BufferSendState.endsSendLoop(cause) || !started) {
+      None
+    } else {
+      Some(BufferSendState.ErrorReply(RapidsShuffleServer.failureReason(outcome), replyGate))
+    }
   }
 
   private def closeQuietly(what: String, resource: AutoCloseable): Unit = {
@@ -426,7 +521,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           case MessageType.MetadataRequest =>
             asyncOrBlock(HandleMeta(tx))
           case MessageType.TransferRequest =>
-            val pendingTransfer = PendingTransferResponse(tx, requestHandler)
+            val pendingTransfer = PendingTransferResponse(tx, requestHandler, currentTimeNanos())
             val queued = bssExec.synchronized {
               if (started) {
                 pendingTransfersQueue.add(pendingTransfer)
@@ -448,7 +543,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     })
   }
 
-  case class PendingTransferResponse(tx: Transaction, requestHandler: RapidsShuffleRequestHandler)
+  /** A transfer request waiting for send bounce buffers, and when it arrived. */
+  case class PendingTransferResponse(
+      tx: Transaction,
+      requestHandler: RapidsShuffleRequestHandler,
+      arrivalNanos: Long)
 
   /**
    * Handles the very first message that a client will send, in order to request Table/Buffer info.
@@ -556,8 +655,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               // We failed to prepare the send (copy to bounce buffer), and got an exception.
               // Put the `bufferSendState` back in the continue queue, so it can be retried.
               // If no `BufferSendState` could be handled, retry only transient OOM failures.
-              // TODO: we should respond with a failure to the client.
-              // Please see: https://github.com/NVIDIA/spark-rapids/issues/3040
               if (toTryAgain == null) {
                 toTryAgain = new ArrayBuffer[BufferSendState]()
                 supressedErrors = new ArrayBuffer[Throwable]()
@@ -589,7 +686,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                 gone.map(f => (f._1.peerExecutorId, f._1.getPeerBufferReceiveHeader))) +
               ". These sends will not be retried.")
           logDebug("Missing output while preparing shuffle sends", gone.head._2)
-          gone.foreach(_._1.finish(BufferSendState.MissingOutput))
+          gone.foreach { case (state, error) =>
+            state.finish(BufferSendState.MissingOutput,
+              errorReply(BufferSendState.MissingOutput, error))
+          }
         }
 
         // Preserve the existing fail-fast behavior when an entire batch fails and at least one
@@ -606,9 +706,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         val oomFailures = failures.filter(f => isMaterializationOom(f._2))
         val oomDecisions = if (oomFailures.nonEmpty) {
           val nowNanos = currentTimeNanos()
-          val timeoutNanos = oomRetryTimeoutNanos
+          val retryNanos = RapidsShuffleServer.oomRetryNanos(oomRetryTimeoutNanos)
           oomFailures.map { case (state, error) =>
-            (state, error, state.recordOomAndGetRetryAttempt(nowNanos, timeoutNanos))
+            (state, error, state.recordOomAndGetRetryAttempt(nowNanos, retryNanos))
           }
         } else {
           Seq.empty
@@ -619,7 +719,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           stopOomRetries(
             expiredOom.map(_._1),
             expiredOom.map(_._2),
-            "The per-send OOM retry window derived from spark.network.timeout expired.")
+            "Their requests passed the OOM retry deadline, which comes before their readers' " +
+                "spark.network.timeout runs out.")
         }
 
         val retryableOomStates = retryableOom.map(_._1).toSet
@@ -688,7 +789,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         bufferSendStates.foreach { bufferSendState =>
           if (!sendsReached.contains(bufferSendState)) {
             try {
-              bufferSendState.finish(BufferSendState.Failed)
+              // The reply is decided per state, since ending one can add an error to `t` that
+              // ends the loop. The states answered before that stay answered.
+              bufferSendState.finish(BufferSendState.Failed, errorReply(BufferSendState.Failed, t))
             } catch {
               case NonFatal(e) => keep(e)
             }
@@ -734,6 +837,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         serverConnection.send(peerExecutorId, MessageType.Buffer,
           // TODO: it may be nice to hide `sendHeader` in `Transaction`
           sendHeader, buffersToSend, txCallback)
+        bufferSendState.windowIssued()
       } catch {
         case NonFatal(t) =>
           inFlight.synchronized {
@@ -741,7 +845,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           }
           logError(s"Error while issuing a send for $bufferSendState. " +
               "It will not be retried.", t)
-          bufferSendState.finish(BufferSendState.Failed)
+          bufferSendState.finish(BufferSendState.Failed, errorReply(BufferSendState.Failed, t))
       }
     }
   }
@@ -787,24 +891,32 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             s"${bufferSendState.peerExecutorId} with $buffersToSend")
 
           // send the transfer response
-          try {
-            requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
-              withResource(transferResponse) { _ =>
-                responseTx.getStatus match {
-                  case TransactionStatus.Cancelled | TransactionStatus.Error =>
-                    logError(s"Error while handling TransferResponse: " +
-                      s"${responseTx.getErrorMessage}")
-                  case _ =>
+          val queued = try {
+            replyGate.queueIfOpen {
+              requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
+                withResource(transferResponse) { _ =>
+                  responseTx.getStatus match {
+                    case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                      logError(s"Error while handling TransferResponse: " +
+                        s"${responseTx.getErrorMessage}")
+                    case _ =>
+                  }
                 }
-              }
-            })
+              })
+            }
           } catch {
             case t: Throwable =>
               // a respond that throws queued nothing, so its callback will not release this
               closeQuietly("a transfer response", transferResponse)
               throw t
           }
-          outcome = BufferSendState.Completed
+          if (queued) {
+            outcome = BufferSendState.Completed
+          } else {
+            // the server closed after the check above
+            closeQuietly("a transfer response", transferResponse)
+            outcome = BufferSendState.ServerClosed
+          }
         } finally {
           logDebug(s"Buffer send state " +
             s"${TransportUtils.toHex(bufferSendState.getPeerBufferReceiveHeader)} " +
@@ -825,6 +937,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     bssExec.synchronized {
       started = false
       bssExec.notifyAll()
+      // so that each reply let through is queued before the transport closes
+      while (repliesQueueing > 0) {
+        bssExec.wait()
+      }
     }
     // The loop ends what is still queued as it exits. The wait is bounded, because a pass can
     // be stuck in a CUDA synchronization.
@@ -872,6 +988,29 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 object RapidsShuffleServer {
   // how long close() waits for the send loop to exit
   private val CLOSE_WAIT_MILLIS = 500L
+
+  // How much sooner than its reader's wait a request's OOM retries end, for the error reply to
+  // reach the reader first. It covers the time from the reader starting to wait to the request
+  // arriving, the retry pass that finds the end, and the reply's delivery. A request that waited
+  // longer than that in its requester's queue, which the server cannot see, still arrives too
+  // late, and its reader times out.
+  private val OOM_REPLY_MARGIN_NANOS = TimeUnit.SECONDS.toNanos(10)
+
+  /**
+   * How long after its request arrived a send may retry a materialization OOM, given how long
+   * the reader waits: that wait less a margin of 10 seconds, or of half the wait if it is
+   * shorter than 20 seconds.
+   */
+  private[shuffle] def oomRetryNanos(readerWaitNanos: Long): Long =
+    readerWaitNanos - math.min(OOM_REPLY_MARGIN_NANOS, readerWaitNanos / 2)
+
+  /** Why a transfer request ended with `outcome`, in the error reply its requester gets. */
+  private[shuffle] def failureReason(outcome: BufferSendState.Outcome): String = outcome match {
+    case BufferSendState.MissingOutput => "the shuffle output it asked for is gone"
+    case BufferSendState.OomExpired =>
+      "memory ran out while preparing it, past its retry deadline"
+    case _ => "the server failed to prepare or send it"
+  }
 
   // how many requests a log line names before it only counts the rest
   private val MAX_REQUESTS_NAMED = 5
