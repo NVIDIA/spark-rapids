@@ -55,7 +55,8 @@ object PersistentDeletionVectorMetaShim {
             "native cuDF deletion-vector predicate pushdown")
       }
       val fileScanKey = "spark.rapids.sql.exec.FileSourceScanExec"
-      if (!rapidsConf.isOperatorEnabled(fileScanKey, incompat = false, isDisabledByDefault = false)) {
+      if (!rapidsConf.isOperatorEnabled(
+          fileScanKey, incompat = false, isDisabledByDefault = false)) {
         meta.willNotWorkOnGpu(
           "Persistent deletion vector writes on GPU require the GPU file scan, which is disabled")
       }
