@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ColumnVector, Cuda, DType, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, Cuda, DefaultHostMemoryAllocator, DType, HostMemoryAllocator,
+  HostMemoryBuffer, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -211,6 +212,68 @@ class GpuPartitioningSuite extends AnyFunSuite with BeforeAndAfterEach {
         }
         assert(ex.getMessage.contains("exceeding the"))
         assert(ex.getMessage.contains("reduce spark.rapids.sql.batchSizeBytes"))
+      }
+    }
+  }
+
+  /** Long enough that the delayed host allocations dominate the device-to-host copy time. */
+  private val slowAllocationMillis = 20L
+
+  /** Delays each host allocation made on the creating thread and totals the time it took. */
+  private class SlowHostAllocator(delegate: HostMemoryAllocator) extends HostMemoryAllocator {
+    private val owner = Thread.currentThread()
+    var allocations = 0
+    var allocationNanos = 0L
+
+    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
+      timed(delegate.allocate(amount, preferPinned))
+
+    override def allocate(amount: Long): HostMemoryBuffer = timed(delegate.allocate(amount))
+
+    private def timed(doAllocate: => HostMemoryBuffer): HostMemoryBuffer = {
+      if (Thread.currentThread() eq owner) {
+        val start = System.nanoTime()
+        Thread.sleep(slowAllocationMillis)
+        val buffer = doAllocate
+        allocations += 1
+        allocationNanos += System.nanoTime() - start
+        buffer
+      } else {
+        doAllocate
+      }
+    }
+  }
+
+  Seq("CPU", "GPU").foreach { writeMode =>
+    test(s"$writeMode kudo write mode slicing counts host allocation in the copy time") {
+      TrampolineUtil.cleanupAnyExistingSession()
+      val conf = new SparkConf()
+          .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
+          .set(RapidsConf.SHUFFLE_KUDO_WRITE_MODE.key, writeMode)
+      TestUtils.withGpuSparkSession(conf) { _ =>
+        GpuShuffleEnv.init(new RapidsConf(conf))
+        val partitionIndices = Array(0, 2, 2)
+        val gp = partitioning(partitionIndices.length)
+        assert(!gp.usesGPUShuffle)
+        assertResult(writeMode == "GPU")(gp.usesKudoGPUSlicing)
+        val copyTime = new LocalGpuMetric
+        gp.setupDebugMetrics(Map(GpuMetric.COPY_TO_HOST_TIME -> copyTime))
+        withResource(buildBatch()) { batch =>
+          GpuColumnVector.incRefCounts(batch)
+          val columns = GpuColumnVector.extractColumns(batch)
+          val previous = DefaultHostMemoryAllocator.get()
+          val allocator = new SlowHostAllocator(previous)
+          DefaultHostMemoryAllocator.set(allocator)
+          val parts = try {
+            gp.sliceInternalGpuOrCpuAndClose(batch.numRows, partitionIndices, columns)
+          } finally {
+            DefaultHostMemoryAllocator.set(previous)
+          }
+          withResource(parts.map(_._1)) { _ =>
+            assert(allocator.allocations > 0)
+            assert(copyTime.value >= allocator.allocationNanos)
+          }
+        }
       }
     }
   }
