@@ -54,7 +54,7 @@ def _physical_parquet_schema(spark, table):
     jvm = spark.sparkContext._jvm
     reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(
         spark.sparkContext._jsc.hadoopConfiguration(),
-        jvm.org.apache.hadoop.fs.Path(file_path))
+        jvm.org.apache.hadoop.fs.Path(jvm.java.net.URI(file_path)))
     try:
         return reader.getFooter().getFileMetaData().getSchema().toString()
     finally:
