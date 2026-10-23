@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.Locale
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.{DataFrame, SparkSession}
 
@@ -84,8 +86,13 @@ class TimestampConditionalSuite extends SparkQueryCompareTestSuite {
         testBothCpuGpuExpectedException[Exception](
             s"$function rejects selected Long overflow in $kind, sign=$sign, ANSI=$ansi",
             e => Iterator.iterate(e: Throwable)(_.getCause).takeWhile(_ != null).exists {
-              cause => cause.isInstanceOf[ArithmeticException] &&
-                cause.getMessage.contains("long overflow")
+              cause => cause.isInstanceOf[ArithmeticException] && {
+                if (cmpSparkVersion(5, 0, 0) >= 0) {
+                  cause.getMessage.toLowerCase(Locale.ROOT).contains("overflow")
+                } else {
+                  cause.getMessage.contains("long overflow")
+                }
+              }
             },
             spark => {
               import spark.implicits._
