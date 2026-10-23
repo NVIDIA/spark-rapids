@@ -51,33 +51,6 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase {
     assert(resultRowCounts == expectedRowCounts)
   }
 
-  test("nested partition strings respect column limits across null structs and file boundaries") {
-    val partitionType = StructType(Seq(
-      StructField("p", StringType), StructField("q", StringType)))
-    val schema = StructType(Seq(
-      StructField("_partition", partitionType), StructField("_spec_id", IntegerType)))
-    val values = Array[InternalRow](
-      InternalRow(toInternalRow(Array("aa", "c")), 0),
-      InternalRow(null, 0),
-      InternalRow(toInternalRow(Array("bbbb", null)), 1))
-    val groups = BatchWithPartitionDataUtils.splitPartitionDataIntoGroups(
-      PartitionRowData.from(values, Array(2L, 2L, 3L)), schema, 8L)
-
-    assert(groups.map(_.map(_.rowNum).sum).toSeq == Seq(5, 2))
-    assert(groups(0).last == PartitionRowData(values(2), 1))
-    assert(groups(1).head == PartitionRowData(values(2), 2))
-  }
-
-  test("a single oversized nested string fails instead of repeatedly splitting zero rows") {
-    val partitionType = StructType(Seq(StructField("p", StringType)))
-    val schema = StructType(Seq(StructField("_partition", partitionType)))
-    val value = InternalRow(toInternalRow(Array("too long")))
-    intercept[IllegalArgumentException] {
-      BatchWithPartitionDataUtils.splitPartitionDataIntoGroups(
-        Array(PartitionRowData(value, 1)), schema, 4L)
-    }
-  }
-
   test("test adding partition values to batch with OOM split and retry - unhandled") {
     // This test uses single-row partition values that should throw a GpuSplitAndRetryOOM exception
     // when a retry is forced.

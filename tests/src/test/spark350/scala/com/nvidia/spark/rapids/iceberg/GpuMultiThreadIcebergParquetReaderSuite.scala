@@ -39,8 +39,7 @@ import java.nio.file.Files
 import java.util.{HashMap => JHashMap}
 import java.util.concurrent.CompletableFuture
 
-import com.nvidia.spark.rapids.{CombineConf, GpuColumnVector, GpuMetric, LocalGpuMetric, PerfIO,
-  PerfIOConf, RmmSparkRetrySuiteBase, ThreadPoolConfBuilder}
+import com.nvidia.spark.rapids.{CombineConf, PerfIO, PerfIOConf, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.parquet._
@@ -55,6 +54,7 @@ import org.apache.parquet.hadoop.example.ExampleParquetWriter
 import org.apache.parquet.schema.{MessageType, Types => ParquetTypes}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.INT64
 import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.InternalRow
@@ -62,8 +62,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.unsafe.types.UTF8String
 
-class GpuMultiThreadIcebergParquetReaderSuite
-  extends RmmSparkRetrySuiteBase with BeforeAndAfterAll {
+class GpuMultiThreadIcebergParquetReaderSuite extends AnyFunSuite with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
     super.beforeAll()
     PerfIO.initS3Client(PerfIOConf(new SparkConf()))
@@ -93,13 +92,10 @@ class GpuMultiThreadIcebergParquetReaderSuite
   }
 
   private val defaultColumnBytes = 1L << 20
-  for ((sameConstants, metadataColumns, maxColumnBytes) <- Seq(
-      (false, false, defaultColumnBytes), (true, false, defaultColumnBytes),
-      (false, true, defaultColumnBytes), (true, true, defaultColumnBytes),
-      (false, true, 8L))) {
-    test(s"actual Iceberg reader materializes combined metadata-only files: " +
-        s"sameConstants=$sameConstants, metadataColumns=$metadataColumns, " +
-        s"maxColumnBytes=$maxColumnBytes") {
+  for ((sameConstants, metadataColumns) <- Seq(
+      (false, false), (true, false), (false, true), (true, true))) {
+    test(s"actual Iceberg reader combines metadata-only files only when constants match: " +
+        s"sameConstants=$sameConstants, metadataColumns=$metadataColumns") {
       val dir = Files.createTempDirectory("iceberg-metadata-combine")
       val taskContext = new MockTaskContext(1, 0)
       TrampolineUtil.setTaskContext(taskContext)
@@ -128,20 +124,19 @@ class GpuMultiThreadIcebergParquetReaderSuite
           } else {
             new Schema(Types.NestedField.optional(partitionFieldId, "a", Types.LongType.get()))
           }
-          val mixedConstantGroups = new LocalGpuMetric
           val conf = GpuIcebergParquetReaderConf(
             caseSensitive = true,
             hadoopConf,
             maxBatchSizeRows = 1000,
             maxBatchSizeBytes = 1L << 20,
             targetBatchSizeBytes = 1L << 20,
-            maxGpuColumnSizeBytes = maxColumnBytes,
+            maxGpuColumnSizeBytes = defaultColumnBytes,
             useChunkedReader = false,
             maxChunkedReaderMemoryUsageSizeBytes = 0,
             skipReadEstimate = true,
             parquetDebugDumpPrefix = None,
             parquetDebugDumpAlways = false,
-            metrics = Map(GpuMetric.NUM_MIXED_CONSTANT_METADATA_GROUPS -> mixedConstantGroups),
+            metrics = Map.empty,
             threadConf = MultiThread(
               new ThreadPoolConfBuilder(1, true, 1L << 20, 10000L, false),
               maxNumFilesProcessed = files.size,
@@ -190,48 +185,11 @@ class GpuMultiThreadIcebergParquetReaderSuite
                     assert(firstMeta.memBuffersAndSizes.map(_.numRows).sum == firstRows)
                     assert(secondMeta.memBuffersAndSizes.map(_.numRows).sum == secondRows)
                     withResource(reader.combineHMBs(Array(firstMeta, secondMeta))) { combined =>
-                      assert(combined.memBuffersAndSizes.map(_.numRows).sum ==
-                        firstRows + secondRows)
-                      // The retry-suite fixture owns the GPU; the mock task has no SparkEnv.
-                      TrampolineUtil.unsetTaskContext()
-                      val batchSizes = scala.collection.mutable.ArrayBuffer[Int]()
-                      val actual = reader.readBatches(combined).flatMap { batch =>
-                        withResource(batch) { _ =>
-                          batchSizes += batch.numRows()
-                          withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) {
-                              column =>
-                            if (metadataColumns) {
-                              withResource(batch.column(1).asInstanceOf[GpuColumnVector]
-                                  .copyToHost()) { specs =>
-                                withResource(batch.column(2).asInstanceOf[GpuColumnVector]
-                                    .copyToHost()) { missing =>
-                                  (0 until batch.numRows()).map { row =>
-                                    assert(missing.getBase.isNull(row))
-                                    val value = column.getBase.getChildColumnView(0)
-                                      .getJavaString(row)
-                                    (value, specs.getBase.getInt(row).toLong)
-                                  }
-                                }
-                              }
-                            } else {
-                              (0 until batch.numRows()).map { row =>
-                                ("", column.getBase.getLong(row))
-                              }
-                            }
-                          }
-                        }
-                      }.toVector
-                      val expected = if (metadataColumns) {
-                        Vector.fill(firstRows)(("aa", 0L)) ++ Vector.fill(secondRows)(
-                          (if (sameConstants) "aa" else "bbbb", if (sameConstants) 0L else 1L))
-                      } else {
-                        Vector.fill(firstRows)(("", firstConstant)) ++
-                          Vector.fill(secondRows)(("", secondConstant))
+                      val expectedRows = if (sameConstants) firstRows + secondRows else firstRows
+                      assert(combined.memBuffersAndSizes.map(_.numRows).sum == expectedRows)
+                      if (!sameConstants) {
+                        assert(combined eq firstMeta)
                       }
-                      assert(actual == expected)
-                      val expectedBatchSizes = if (maxColumnBytes == 8L) Seq(3, 2) else Seq(5)
-                      assert(batchSizes.toSeq == expectedBatchSizes)
-                      assert(mixedConstantGroups.value == (if (sameConstants) 0L else 1L))
                     }
                   }
                 }

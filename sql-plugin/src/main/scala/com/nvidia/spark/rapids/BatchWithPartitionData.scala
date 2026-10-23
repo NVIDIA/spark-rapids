@@ -25,9 +25,8 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetry
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.types.{DataType, StringType, StructType}
+import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Wrapper class that specifies how many rows to replicate
@@ -257,7 +256,7 @@ object BatchWithPartitionDataUtils {
       maxGpuColumnSizeBytes: Long): Array[Array[PartitionRowData]] = {
     val resultBatches = ArrayBuffer[Array[PartitionRowData]]()
     val currentBatch = ArrayBuffer[PartitionRowData]()
-    val sizeOfBatch = Array.fill(stringColumnSizes(null, partSchema).length)(0L)
+    val sizeOfBatch = Array.fill(partSchema.length)(0L)
     var partIndex = 0
     var splitOccurred = false
     var rowsInPartition = 0
@@ -299,25 +298,19 @@ object BatchWithPartitionDataUtils {
     resultBatches.toArray
   }
 
-  // Each string child has its own cuDF size limit, including strings inside Iceberg's _partition.
-  // Null structs still contribute one zero per string child so offsets align across files.
-  private def stringColumnSizes(value: Any, dataType: DataType): Seq[Long] = dataType match {
-    case StringType =>
-      Seq(if (value == null) 0L else value.asInstanceOf[UTF8String].numBytes.toLong)
-    case struct: StructType =>
-      struct.fields.zipWithIndex.toSeq.flatMap { case (field, index) =>
-        val child = if (value == null) null else {
-          value.asInstanceOf[InternalRow].get(index, field.dataType)
-        }
-        stringColumnSizes(child, field.dataType)
-      }
-    case _ => Seq.empty
-  }
-
-  /** Calculates the repeated string size for each string column or struct child. */
+  /**
+   * Calculates the partition size for each column as 'size of single value * number of rows'
+   */
   private def calculatePartitionSizes(rowNum: Int, values: InternalRow,
       partSchema: StructType): Seq[Long] = {
-    stringColumnSizes(values, partSchema).map(_ * rowNum.toLong)
+    partSchema.zipWithIndex.map {
+      case (field, colIndex) if field.dataType == StringType
+        && !values.isNullAt(colIndex) =>
+        // Assumption: Columns of other data type would not have fit already. Do nothing.
+        val sizeOfSingleValue = values.getUTF8String(colIndex).numBytes
+        rowNum * sizeOfSingleValue
+      case _ => 0L
+    }
   }
 
   /**
@@ -326,14 +319,21 @@ object BatchWithPartitionDataUtils {
    */
   private def calculateMaxRows(rowNum: Int, values: InternalRow, partSchema: StructType,
       sizeOfBatch: Array[Long], maxGpuColumnSizeBytes: Long): Int = {
-    stringColumnSizes(values, partSchema).zip(sizeOfBatch).foldLeft(rowNum) {
-      case (maxRows, (0L, _)) => maxRows
-      case (maxRows, (sizeOfSingleValue, currentSize)) =>
-        require(sizeOfSingleValue <= maxGpuColumnSizeBytes,
-          "A single partition string exceeds the maximum GPU column size")
-        val availableSpace = maxGpuColumnSizeBytes - currentSize
-        math.min(maxRows.toLong, availableSpace / sizeOfSingleValue).toInt
-    }
+    partSchema.zipWithIndex.map {
+      case (field, colIndex) if field.dataType == StringType
+        && !values.isNullAt(colIndex) =>
+        val sizeOfSingleValue = values.getUTF8String(colIndex).numBytes
+        if (sizeOfSingleValue == 0) {
+          // All rows can fit
+          rowNum
+        } else {
+          val availableSpace = maxGpuColumnSizeBytes - sizeOfBatch(colIndex)
+          val maxRows = (availableSpace / sizeOfSingleValue).toInt
+          // Cap it at rowNum to ensure it doesn't exceed the available rows in the partition
+          Math.min(maxRows, rowNum)
+        }
+      case _ => rowNum
+    }.min
   }
 
   /**
