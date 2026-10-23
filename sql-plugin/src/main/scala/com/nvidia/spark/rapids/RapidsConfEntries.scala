@@ -67,6 +67,14 @@ private[rapids] trait RapidsConfEntries extends RapidsConfSqlEntries {
       .booleanConf
       .createWithDefault(false)
 
+  val TEST_PARQUET_HYBRID_SCAN_FAIL_ON_FALLBACK =
+    conf("spark.rapids.sql.test.format.parquet.hybridScan.failOnFallback")
+      .doc("Only to be used in tests. When true and the hybrid scan reader is enabled, fail a " +
+        "PERFILE Parquet scan that would fall back to the parquet-mr path instead of reading it.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val TEST_ALLOWED_NONGPU = conf("spark.rapids.sql.test.allowedNonGpu")
     .doc("Comma separate string of exec or expression class names that are allowed " +
       "to not be GPU accelerated for testing.")
