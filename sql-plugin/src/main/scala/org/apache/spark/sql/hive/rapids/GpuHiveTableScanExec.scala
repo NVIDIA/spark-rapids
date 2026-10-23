@@ -584,8 +584,8 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
 
   /**
-   * Override of [[com.nvidia.spark.rapids.GpuTextBasedPartitionReader#castStringToDate]],
-   * to convert parsed string columns to Dates.
+   * Override of the two-argument `castStringToDate` in
+   * [[com.nvidia.spark.rapids.GpuTextBasedPartitionReader]] to convert string columns to Dates.
    * Two key differences from the base implementation, to comply with Hive LazySimpleSerDe
    * semantics:
    *   1. The input strings are not trimmed of whitespace.
