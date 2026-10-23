@@ -1419,7 +1419,8 @@ def test_orc_not_support_timestamp_ltz(std_input_path):
     """
     data_path = f"{std_input_path}/timestamp_ltz.orc"
     expected_error_message = "timestamp with local time zone" \
-        if is_spark_420_or_later() else "ParseException"
+        if is_spark_420_or_later() or is_databricks_version_or_later(18, 3) \
+        else "ParseException"
     assert_gpu_and_cpu_error(lambda spark: spark.read.orc(data_path).collect(),
                              conf={},
                              error_message=expected_error_message)

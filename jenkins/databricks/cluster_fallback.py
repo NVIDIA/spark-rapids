@@ -26,6 +26,8 @@ import time
 
 import requests
 
+from clusterutils import ClusterUtils
+
 RETRYABLE_EXIT = 75
 START_TIMEOUT = 30 * 60
 SSH_ATTEMPTS = 6
@@ -85,7 +87,8 @@ def check_termination(info):
     # These explicit capacity codes describe infrastructure shortages even when the API
     # categorizes the termination as CLIENT_ERROR. Do not extend that exception to other codes.
     retryable = code in CAPACITY_TERMINATIONS or (
-        code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR")
+        code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR") or (
+        code == "BOOTSTRAP_TIMEOUT" and reason.get("type") == "SERVICE_FAULT")
     print("Cluster termination: code=%s, type=%s, retryable=%s" %
           (code, reason.get("type", "UNKNOWN"), retryable), flush=True)
     raise PreparationError(code, retryable)
@@ -98,21 +101,20 @@ def wait_for_driver(cluster_id, timeout=START_TIMEOUT):
         check_termination(info)
         print("Cluster %s: %s" % (cluster_id, info.get("state", "UNKNOWN")), flush=True)
         if info.get("state") == "RUNNING":
-            address = (info.get("driver") or {}).get("public_dns", "")
+            address = ClusterUtils.get_master_addr_from_json(info) or ""
             if re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9.-]*", address):
                 return address
         time.sleep(20)
-    # An unclassified startup timeout can also be an init-script/configuration defect.
-    raise PreparationError("CLUSTER_READINESS_TIMEOUT")
+    # Retry this pre-build startup deadline on a fresh cluster only after confirmed cleanup.
+    raise PreparationError("CLUSTER_READINESS_TIMEOUT", retryable=True)
 
 
 def wait_for_ssh(address, cluster_id):
     command = [
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectionAttempts=1",
-        "-o", "ConnectTimeout=15", "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null", "-p", "2200",
-        "-i", os.environ["DATABRICKS_PRIVKEY"], "ubuntu@" + address, "true",
-    ]
+        "-o", "ConnectTimeout=15",
+    ] + ClusterUtils.get_ssh_options(os.environ["DATABRICKS_PRIVKEY"]) + [
+        "ubuntu@" + address, "true"]
     for attempt in range(SSH_ATTEMPTS):
         try:
             result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -125,7 +127,8 @@ def wait_for_ssh(address, cluster_id):
                 return
             # Auth, key/configuration errors and arbitrary remote exit codes are not retryable.
             transient = result.returncode == 255 and re.search(
-                r"ssh: connect to host \S+ port 2200: "
+                r"(?:ssh: connect to host \S+ port (?:22|2200): "
+                r"|channel \d+: open failed: connect failed: )"
                 r"(Connection timed out|Connection refused|No route to host)", result.stderr)
             if not transient:
                 raise PreparationError("SSH_READINESS_FAILED")
@@ -261,10 +264,9 @@ def readiness_command(state, command, **kwargs):
         raise PreparationError("INVALID_DRIVER_ADDRESS")
     return subprocess.run([
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectionAttempts=1",
-        "-o", "ConnectTimeout=15", "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null", "-p", "2200",
-        "-i", os.environ["DATABRICKS_PRIVKEY"], "ubuntu@" + address, command,
-    ], text=True, timeout=60, check=True, **kwargs)
+        "-o", "ConnectTimeout=15",
+    ] + ClusterUtils.get_ssh_options(os.environ["DATABRICKS_PRIVKEY"]) + [
+        "ubuntu@" + address, command], text=True, timeout=60, check=True, **kwargs)
 
 
 def spark_readiness(path, operation):
@@ -282,7 +284,8 @@ def spark_readiness(path, operation):
 
     # This marker is written only by the plugin-free preflight. READY/missing markers must
     # never turn a later compilation, smoke-test or pytest failure into a provider retry.
-    state.update(retryable=False, reason="NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE")
+    state.update(retryable=False, classification_available=False,
+                 reason="SPARK_STARTUP_CLASSIFICATION_UNAVAILABLE")
     save_state(path, state)
     results = {}
     for mode in ("databricks", "upstream"):
@@ -297,8 +300,11 @@ def spark_readiness(path, operation):
                 or readiness.get("phase") not in {"STARTING", "READY", "FAILED"}):
             raise PreparationError("INVALID_SPARK_READINESS_RESULT")
         results[mode] = readiness
+        state["spark_readiness"] = results
+        save_state(path, state)
         print("Spark readiness %s: %s" % (mode, readiness["phase"]), flush=True)
     state["spark_readiness"] = results
+    state.update(reason="NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE")
     save_state(path, state)
     if operation == "verify-readiness":
         print("Required Spark readiness checks: " + ", ".join(modes), flush=True)
@@ -329,16 +335,26 @@ def spark_readiness(path, operation):
                 check_termination(info)
             except PreparationError as error:
                 state.update(retryable=error.retryable, reason=str(error))
+    state["classification_available"] = True
     save_state(path, state)
     print("Spark readiness classification: %s (retryable=%s)" %
           (state["reason"], state["retryable"]), flush=True)
     return RETRYABLE_EXIT if state["retryable"] else 1
 
 
+def gpu_diagnostics(path):
+    state = load_state(path)
+    # Both the remote command (10s) and the SSH transport (60s) are bounded.
+    readiness_command(state, "timeout --kill-after=2s 10s nvidia-smi -q 2>&1 || "
+                      "printf '\\nGPU diagnostics unavailable or incomplete.\\n'")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=["prepare", "cleanup", "install-readiness",
-                                             "classify-startup", "verify-readiness"])
+                                             "classify-startup", "verify-readiness",
+                                             "gpu-diagnostics"])
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--config", type=Path,
                         help="prepare only: JSON cluster_spec and ordered readiness_modes")
@@ -349,6 +365,8 @@ def main():
     try:
         if args.operation == "prepare":
             return prepare(args.state, args.config)
+        if args.operation == "gpu-diagnostics":
+            return gpu_diagnostics(args.state)
         if args.operation in {"install-readiness", "classify-startup", "verify-readiness"}:
             return spark_readiness(args.state, args.operation)
         cleanup(args.state)

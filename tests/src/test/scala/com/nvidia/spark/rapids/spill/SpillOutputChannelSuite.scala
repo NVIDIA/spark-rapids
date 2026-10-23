@@ -24,8 +24,10 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import com.nvidia.spark.rapids.Arm.withResource
-import net.jpountz.lz4.LZ4BlockOutputStream
 import org.scalatest.funsuite.AnyFunSuite
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class SpillOutputChannelSuite extends AnyFunSuite {
   Seq("heap", "slice", "direct", "read-only").foreach { kind =>
@@ -163,7 +165,12 @@ class SpillOutputChannelSuite extends AnyFunSuite {
 
       override def close(): Unit = file.close()
     }
-    val channel = new SpillOutputChannel(new LZ4BlockOutputStream(gate, 64))
+    // The small block makes the write reach the gated destination before interruption.
+    val conf = new SparkConf(false)
+      .set("spark.io.compression.codec", "lz4")
+      .set("spark.io.compression.lz4.blockSize", "64")
+    val channel = new SpillOutputChannel(TrampolineUtil.createCodec(conf)
+      .compressedOutputStream(gate))
     val writer = new Thread(new Runnable {
       override def run(): Unit = {
         try {
