@@ -179,7 +179,8 @@ The scan falls back to the CPU for these dates when:
   fields, and the GPU parser cannot preserve that distinction.
 - On Databricks, the format detected for a date column is not in the list above.
 
-For other parser policies, date parsing supports the following limited set of formats.
+With `EXCEPTION` (the default before Spark 4.0), date parsing supports only the following formats.
+`LEGACY` falls back to the CPU.
 
 * `"yyyy-MM-dd"`
 * `"yyyy/MM/dd"`
