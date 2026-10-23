@@ -576,7 +576,6 @@ case class GpuMillisToTimestamp(child: Expression) extends GpuNumberToTimestampU
     case IntegerType | ShortType | ByteType =>
       (input: GpuColumnVector) => {
         withResource(input.getBase.castTo(DType.INT64)) { longs =>
-          checkLongMultiplicationOverflow(longs, DateTimeConstants.MICROS_PER_MILLIS)
           longs.asTimestampMilliseconds()
         }
       }
