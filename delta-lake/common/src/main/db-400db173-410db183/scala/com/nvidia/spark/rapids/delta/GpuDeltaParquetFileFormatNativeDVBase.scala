@@ -273,16 +273,16 @@ private object PhysicalRowIndexes {
         counts(i) = numRows
         previousRows += numRows
       }
-      withResource(ColumnVector.fromLongs(shifts: _*)) { shiftColumn =>
+      // The inputs are closed as soon as the repeated shifts exist to keep the scopes shallow.
+      val repeated = withResource(ColumnVector.fromLongs(shifts: _*)) { shiftColumn =>
         withResource(ColumnVector.fromInts(counts: _*)) { countColumn =>
-          withResource(new Table(shiftColumn)) { shiftTable =>
-            withResource(shiftTable.repeat(countColumn)) { repeated =>
-              withResource(Scalar.fromLong(0L)) { zero =>
-                withResource(ColumnVector.sequence(zero, Math.toIntExact(previousRows))) {
-                  positions => repeated.getColumn(0).add(positions)
-                }
-              }
-            }
+          withResource(new Table(shiftColumn))(_.repeat(countColumn))
+        }
+      }
+      withResource(repeated) { repeatedShifts =>
+        withResource(Scalar.fromLong(0L)) { zero =>
+          withResource(ColumnVector.sequence(zero, Math.toIntExact(previousRows))) { positions =>
+            repeatedShifts.getColumn(0).add(positions)
           }
         }
       }
