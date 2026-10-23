@@ -288,8 +288,9 @@ private[parquet] class HybridScanParquetPartitionReader(
       if (materialized.getRowCount == 0) {
         // The filter accepted no row of any surviving row group. Reported as no table rather than
         // an empty one, so that every way of ending up with no rows looks the same to the caller.
-        materialized.close()
-        None
+        withResource(materialized) { _ =>
+          None
+        }
       } else {
         execMetrics(NUM_OUTPUT_BATCHES) += 1
         Some(materialized)
