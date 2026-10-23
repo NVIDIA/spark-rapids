@@ -94,6 +94,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
       (e, conf, p, r) => new UnaryExprMeta[UnaryExpression](e, conf, p, r) {
 
         private var failOnErrors: Boolean = _
+        private var malformedRowsAsNullFields: Boolean = _
         private var flatSchema: FlattenedSchemaArrays = _
 
         override def tagExprForGpu(): Unit = {
@@ -124,6 +125,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
         } yield {
           failOnErrors = plannerOptions.failOnErrors
+          malformedRowsAsNullFields = plannerOptions.malformedRowsAsNullFields
           flatSchema = arrays
         }
 
@@ -219,7 +221,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         }
 
         override def convertToGpu(child: Expression): GpuExpression =
-          GpuFromProtobuf(e.dataType.asInstanceOf[StructType], flatSchema, failOnErrors, child)
+          GpuFromProtobuf(e.dataType.asInstanceOf[StructType], flatSchema, failOnErrors,
+            malformedRowsAsNullFields, child)
       }
     )
   }
