@@ -143,8 +143,8 @@ def test_avro_read_with_corrupt_files(spark_tmp_path, reader_type, v1_enabled_li
 
     if is_databricks_version(18, 3) and v1_enabled_list == "avro":
         # DBR 18.3 likely has a bug where Avro V1 does not honor ignoreCorruptFiles.
-        # Assert its CPU exception separately before verifying that the GPU reader skips the
-        # corrupt file; newer DBR releases use the normal comparison, exposing a runtime fix.
+        # Later DBR releases should fix this, so apply the special CPU assertion only to 18.3
+        # before verifying that the GPU reader skips the corrupt file.
         assert_spark_exception(
             lambda: with_cpu_session(lambda spark: read_avro(spark).collect(), conf=all_confs),
             "Not an Avro data file")
