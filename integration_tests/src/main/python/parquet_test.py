@@ -730,6 +730,35 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_confs', [combining_multithreaded_parquet_file_reader_conf_ordered,
+                                        combining_multithreaded_parquet_file_reader_conf_unordered])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('with_partitions', [True, False])
+@pytest.mark.parametrize('has_b', [(False, False, True, True, False),
+                                  (True, False, False, True)])
+def test_parquet_read_combine_files_missing_all_requested_cols(
+        spark_tmp_path, reader_confs, v1_enabled_list, with_partitions, has_b):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    for key, includes_b in enumerate(has_b):
+        gen_list = [('a', int_gen)] + ([('b', int_gen)] if includes_b else [])
+        with_cpu_session(
+            lambda spark: gen_df(spark, gen_list, 10 * (key + 1), num_slices=1)
+                .write.parquet(data_path + '/key=' + str(key)))
+
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.files.maxPartitionBytes': '1g',
+        'spark.sql.files.minPartitionNum': '1',
+        'spark.sql.files.openCostInBytes': '1',
+        'spark.rapids.sql.reader.multithreaded.combine.waitTime': '10000'})
+    projected = ['b', 'key'] if with_partitions else ['b']
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.option('mergeSchema', 'true').parquet(data_path)
+            .select(*projected),
+        conf=all_confs)
+
+
 # To test https://github.com/NVIDIA/spark-rapids/pull/7405. Without the fix in that issue this test
 # throws an exception about can't allocate negative amount. To make this problem happen, we
 # read a bunch of empty parquet blocks by filtering on only things in the first and last of 1000 files.

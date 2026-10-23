@@ -315,7 +315,7 @@ def test_delta_delete_dv_user_row_deleted_column(
             return metadata.getString(key) if metadata.contains(key) else name
         # spark_tmp_path may use Hadoop storage that PyArrow cannot access directly.
         hadoop_path = jvm.org.apache.hadoop.fs.Path
-        parquet_path = hadoop_path(hadoop_path(path), add.path())
+        parquet_path = hadoop_path(hadoop_path(path), hadoop_path(jvm.java.net.URI(add.path())))
         local_parquet_path = os.path.join(local_tmp_path, "data.parquet")
         parquet_path.getFileSystem(spark.sparkContext._jsc.hadoopConfiguration()) \
             .copyToLocalFile(parquet_path, hadoop_path(local_parquet_path))
