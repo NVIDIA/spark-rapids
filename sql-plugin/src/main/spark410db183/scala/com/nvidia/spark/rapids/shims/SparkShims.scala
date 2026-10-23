@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{OneRowRelationExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.v2.MergeRowsExec
 
-object SparkShimImpl extends Spark400PlusDBShims {
+object SparkShimImpl extends Spark400PlusDBShims with HyperbolicExpressionShims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(

@@ -20,7 +20,8 @@ from data_gen import *
 from marks import *
 from pyspark.sql import Row
 from pyspark.sql.types import IntegerType
-from spark_session import with_cpu_session, is_before_spark_320, is_spark_411_or_later
+from spark_session import (is_before_spark_320, is_databricks_version,
+                           is_spark_411_or_later, with_cpu_session)
 from conftest import spark_jvm
 
 # Several values to avoid generating too many folders for partitions.
@@ -190,8 +191,8 @@ def test_select_complex_field(format, spark_tmp_path, query, expected_schemata, 
     create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf, table_name)
 
 
-@pytest.mark.skipif(not is_spark_411_or_later(),
-                    reason="Spark 4.1.1+ exposes missing-struct parent validity")
+@pytest.mark.skipif(not (is_spark_411_or_later() or is_databricks_version(18, 3)),
+                    reason="Spark 4.1.1+ and DBR 18.3 expose missing-struct parent validity")
 @pytest.mark.parametrize('footer_type,return_null_struct,nested_array', [
     ("JAVA", False, False),
     ("JAVA", False, True),

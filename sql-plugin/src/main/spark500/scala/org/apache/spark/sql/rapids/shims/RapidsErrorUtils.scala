@@ -15,13 +15,23 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark":"420"}
-{"spark":"500"}
+{"spark": "500"}
 spark-rapids-shim-json-lines ***/
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
-private[shims] object SparkProtobufCompat extends BinarySparkProtobufCompat {
-  override private[shims] def unwrapMessageDescriptor(raw: AnyRef): AnyRef =
-    ProtobufReflection.invoke0[AnyRef](raw, "descriptor")
+import org.apache.spark.sql.catalyst.trees.SQLQueryContext
+import org.apache.spark.sql.errors.DataTypeErrors
+import org.apache.spark.sql.types.{Decimal, DecimalType}
+
+object RapidsErrorUtils extends RapidsErrorUtils340PlusBase
+  with SequenceSizeExceededLimitErrorBuilder with ArrayInvalidArgumentErrorUtils {
+
+  override def cannotChangeDecimalPrecisionError(
+      value: Decimal,
+      toType: DecimalType,
+      context: SQLQueryContext = null): ArithmeticException = {
+    DataTypeErrors.cannotChangeDecimalPrecisionError(
+      value, toType.precision, toType.scale, context)
+  }
 }

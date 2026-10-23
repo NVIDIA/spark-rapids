@@ -15,21 +15,15 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "411"}
-{"spark": "412"}
-{"spark": "413"}
-{"spark": "420"}
-{"spark": "500"}
+{"spark":"410db183"}
+{"spark":"420"}
+{"spark":"500"}
 spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.internal.SQLConf
-
-object ParquetMissingStructShims {
-  private val RETURN_NULL_STRUCT_IF_ALL_FIELDS_MISSING =
-    "spark.sql.legacy.parquet.returnNullStructIfAllFieldsMissing"
-
-  def returnNullStructIfAllFieldsMissing(sqlConf: SQLConf): Boolean =
-    sqlConf.getConfString(RETURN_NULL_STRUCT_IF_ALL_FIELDS_MISSING, "false").toBoolean
+// DBR 18.3 backports the Spark 4.2 DescriptorWithExtensions builder result.
+private[shims] object SparkProtobufCompat extends BinarySparkProtobufCompat {
+  override private[shims] def unwrapMessageDescriptor(raw: AnyRef): AnyRef =
+    ProtobufReflection.invoke0[AnyRef](raw, "descriptor")
 }

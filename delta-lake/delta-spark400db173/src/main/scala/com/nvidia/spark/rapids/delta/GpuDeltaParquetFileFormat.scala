@@ -23,15 +23,18 @@ import com.databricks.sql.transaction.tahoe.{
   DeltaParquetFileFormat,
   IdMapping,
   NameMapping,
-  NoMapping
+  NoMapping,
+  VariantShreddingPreviewTableFeature,
+  VariantShreddingTableFeature
 }
 import com.databricks.sql.transaction.tahoe.actions.{Metadata, Protocol}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.SchemaMergingUtils
-import com.nvidia.spark.rapids.{GpuMetric, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, RapidsConf, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.{
   addMetadataColumnToIterator,
   METADATA_ROW_IDX_COL}
+import com.nvidia.spark.rapids.parquet.GpuParquetScan
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -41,6 +44,7 @@ import org.apache.spark.sql.catalyst.expressions.Literal.TrueLiteral
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{MetadataBuilder, StructType}
@@ -67,7 +71,7 @@ case class GpuDeltaParquetFileFormat(
     optimizationsEnabled: Boolean = true,
     tablePath: Option[String] = None,
     isCDCRead: Boolean = false,
-    lowShuffleMergeScan: Boolean = false,
+    lowShuffleMergeDiscoveryScan: Boolean = false,
     lowShuffleMergeRowIndexColumn: String = METADATA_ROW_IDX_COL
   ) extends GpuDeltaParquetFileFormatBase {
 
@@ -91,7 +95,7 @@ case class GpuDeltaParquetFileFormat(
     // The discovery row index is synthetic, so it has no entry in the table's column mapping.
     // Match its collision-safe name only on marked scans; similarly named user columns still
     // need physical mapping. The base reader also calls this method for schemas without it.
-    val rowIndexOrdinal = if (lowShuffleMergeScan) {
+    val rowIndexOrdinal = if (lowShuffleMergeDiscoveryScan) {
       inputSchema.fields.indexWhere(_.name == lowShuffleMergeRowIndexColumn)
     } else {
       -1
@@ -138,7 +142,7 @@ case class GpuDeltaParquetFileFormat(
    * Translates pushed filters to physical column names when Delta column mapping is enabled.
    */
   private def prepareFiltersForRead(filters: Seq[Filter]): Seq[Filter] = {
-    if (lowShuffleMergeScan || !effectiveOptimizationsEnabled) {
+    if (lowShuffleMergeDiscoveryScan || !effectiveOptimizationsEnabled) {
       Seq.empty
     } else if (columnMappingMode != NoMapping) {
       val physicalNameMap = DeltaColumnMapping.getLogicalNameToPhysicalNameMap(referenceSchema)
@@ -156,7 +160,7 @@ case class GpuDeltaParquetFileFormat(
   override def isSplitable(
       sparkSession: SparkSession,
       options: Map[String, String],
-      path: Path): Boolean = !lowShuffleMergeScan && effectiveOptimizationsEnabled
+      path: Path): Boolean = !lowShuffleMergeDiscoveryScan && effectiveOptimizationsEnabled
 
   private def hasDeletionVectorRead: Boolean =
     GpuDeltaParquetFileFormat.isDeletionVectorRead(
@@ -199,7 +203,7 @@ case class GpuDeltaParquetFileFormat(
       hadoopConf,
       metrics)
 
-    if (lowShuffleMergeScan) {
+    if (lowShuffleMergeDiscoveryScan) {
       val maxBatchSize = RapidsConf.DELTA_LOW_SHUFFLE_MERGE_SCATTER_DEL_VECTOR_BATCH_SIZE
         .get(sparkSession.sessionState.conf)
       val scatterTime = metrics(GpuMetric.DELETION_VECTOR_SCATTER_TIME)
@@ -222,13 +226,26 @@ object GpuDeltaParquetFileFormat {
   private[delta] val EDGE_COMPUTED_COLUMN_SKIP_ROW =
     "_databricks_internal_edge_computed_column_skip_row"
 
-  val LOW_SHUFFLE_MERGE_SCAN_OPTION =
-    "spark.rapids.internal.delta.lowShuffleMerge.scan"
-  val LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION =
-    "spark.rapids.internal.delta.lowShuffleMerge.rowIndexColumn"
+  def hasPhysicalDeletionVectorSkipRowColumn(schema: StructType): Boolean =
+    schema.exists { field =>
+      Seq(field.name, DeltaColumnMapping.getPhysicalName(field)).exists { name =>
+        name == EDGE_COMPUTED_COLUMN_SKIP_ROW ||
+          name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
+      }
+    }
 
-  def isLowShuffleMergeScan(options: Map[String, String]): Boolean =
-    options.get(LOW_SHUFFLE_MERGE_SCAN_OPTION).contains("true")
+  val LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION =
+    DeltaReadSupport.LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION
+  val LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION =
+    DeltaReadSupport.LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION
+  val LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION =
+    DeltaReadSupport.LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION
+
+  def isLowShuffleMergeRewriteScan(options: Map[String, String]): Boolean =
+    options.get(LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION).contains("true")
+
+  def isLowShuffleMergeDiscoveryScan(options: Map[String, String]): Boolean =
+    options.get(LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION).contains("true")
 
   def isDeletionVectorRead(format: DeltaParquetFileFormat): Boolean =
     isDeletionVectorRead(
@@ -257,6 +274,18 @@ object GpuDeltaParquetFileFormat {
         s"reading metadata columns starting with prefix _databricks_internal is not supported")
     }
     val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
+    val mayContainShreddedVariant =
+      format.protocol.isFeatureSupported(VariantShreddingPreviewTableFeature) ||
+        format.protocol.isFeatureSupported(VariantShreddingTableFeature)
+    if (mayContainShreddedVariant && requiredSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, GpuColumnVector.isVariantType)
+    }) {
+      // The protocol can retain this feature after shredded writes are disabled, because
+      // existing files can still be shredded. Keep their VARIANT consumers on CPU as well.
+      GpuParquetScan.tagVariantScanPrefixForCpu(meta,
+        "GPU Delta reader does not support VARIANT columns when the table protocol " +
+          "supports variant shredding")
+    }
     val hasRowIndexFilters = hasRowIndexFiltersInTahoeFileIndex(meta.wrapped.relation)
     if (hasDeletionVectorSkipRowColumn &&
         DeltaSpark400DB173Provider.isDmlMetricDVScan(meta)) {
@@ -319,7 +348,7 @@ object GpuDeltaParquetFileFormat {
       optimizationsEnabled = fmt.optimizationsEnabled,
       tablePath = fmt.tablePath,
       isCDCRead = fmt.isCDCRead,
-      lowShuffleMergeScan = isLowShuffleMergeScan(relation.options),
+      lowShuffleMergeDiscoveryScan = isLowShuffleMergeDiscoveryScan(relation.options),
       lowShuffleMergeRowIndexColumn = relation.options
         .getOrElse(LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION, METADATA_ROW_IDX_COL))
   }
