@@ -48,6 +48,7 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimLoader}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, UnaryExpression}
@@ -138,7 +139,8 @@ class SparkProtobufCompatSuite extends AnyFunSuite {
     }
     val descriptor = new FakeModernDescriptor("proto2")
     val version = org.apache.spark.SPARK_VERSION
-    val raw = if (version.startsWith("4.2.") || version.startsWith("5.0.")) {
+    val raw = if (version.startsWith("4.2.") || version.startsWith("5.0.") ||
+        ShimLoader.getShimVersion == DatabricksShimVersion(4, 1, 0, "18.3")) {
       new DescriptorWithExtensions(descriptor)
     } else {
       descriptor
