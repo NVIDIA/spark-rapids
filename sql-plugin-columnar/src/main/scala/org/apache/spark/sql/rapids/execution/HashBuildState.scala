@@ -14,14 +14,22 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark":"420"}
-{"spark":"500"}
-spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids.execution
 
-package com.nvidia.spark.rapids.shims
+sealed trait BuildStatus
 
-private[shims] object SparkProtobufCompat extends BinarySparkProtobufCompat {
-  override private[shims] def unwrapMessageDescriptor(raw: AnyRef): AnyRef =
-    ProtobufReflection.invoke0[AnyRef](raw, "descriptor")
+object BuildStatus {
+  case object Cold extends BuildStatus
+  case object Building extends BuildStatus
+  case object Ready extends BuildStatus
+  case object Evicted extends BuildStatus
 }
+
+private[execution] case class BuildDemand(probeCount: Long, probeRows: Long)
+
+private[execution] object BuildDemand {
+  val Empty: BuildDemand = BuildDemand(0L, 0L)
+}
+
+/** Identifies one executor-local run of a join to track build demands. */
+case class HashBuildDemandId(joinId: Int, stageId: Int, stageAttempt: Int)
