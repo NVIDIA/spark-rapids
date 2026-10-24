@@ -133,7 +133,8 @@ will produce a different result compared to the plugin.
 ## CSV Reading
 
 Spark allows for stripping leading and trailing white space using various options that are off by
-default. The plugin will strip leading and trailing space for all values except strings.
+default. For supported `CORRECTED` date formats, whitespace handling follows Spark as described
+below. The plugin strips leading and trailing space for other non-string values.
 
 There are also discrepancies/issues with specific types that are detailed below.
 
@@ -152,7 +153,34 @@ replacement character �.  Instead it just passes them through as described in 
 
 ### CSV Dates
 
-Only a limited set of formats are supported when parsing dates.
+With `spark.sql.legacy.timeParserPolicy=CORRECTED` (the default since Spark 4.0), CSV dates are
+parsed on the GPU with the same results as Spark, in any session time zone, when `dateFormat` is
+absent or is one of the following:
+
+- `yyyy-MM-dd`
+- `yyyy/MM/dd`
+- `yyyy-MM`
+- `yyyy/MM`
+- `dd/MM/yyyy`
+- `yyyy-MM-dd HH:mm:ss`
+- `MM-dd`
+- `MM/dd`
+- `dd-MM`
+- `dd/MM`
+- `MM/yyyy`
+- `MM-yyyy`
+- `MM/dd/yyyy`
+- `MM-dd-yyyy`
+- `MMyyyy`
+
+The scan falls back to the CPU for these dates when:
+
+- `ignoreLeadingWhiteSpace` or `ignoreTrailingWhiteSpace` is `true`. Spark trims only unquoted
+  fields, and the GPU parser cannot preserve that distinction.
+- On Databricks, the format detected for a date column is not in the list above.
+
+With `EXCEPTION` (the default before Spark 4.0), date parsing supports only the following formats.
+`LEGACY` falls back to the CPU.
 
 * `"yyyy-MM-dd"`
 * `"yyyy/MM/dd"`
@@ -184,8 +212,7 @@ portion followed by one of the following formats:
 * `HH:mm:ss.SSS`
 * `HH:mm:ss[.SSS]`
 
-Just like with dates all timestamp formats are actually supported at the same time.  The plugin will
-disable itself if it sees a format it cannot support.
+The plugin disables GPU timestamp parsing if the configured format is unsupported.
 
 Invalid timestamps in Spark, ones that have the correct format, but the numbers produce invalid
 dates or times, can result in an exception by default and how they are parsed can be controlled
