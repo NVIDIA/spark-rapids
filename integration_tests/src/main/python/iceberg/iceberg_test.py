@@ -1472,6 +1472,8 @@ def test_iceberg_small_file_combine_with_schema_evolution(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.skipif(is_iceberg_remote_catalog(),
+                   reason="Requires control of Iceberg scan split planning")
 def test_iceberg_small_file_combine_with_partition_spec_evolution(
         spark_tmp_table_factory, reader_type):
     table = get_full_table_name(spark_tmp_table_factory)
