@@ -29,6 +29,7 @@ import org.apache.iceberg.io.StorageCredential;
 import org.apache.iceberg.io.SupportsStorageCredentials;
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
 import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.spark.source.GpuSparkCopyOnWriteScan;
 import org.apache.iceberg.spark.source.GpuSparkScan;
@@ -43,6 +44,11 @@ import java.util.Map;
 
 /** Iceberg 1.11.x shim: uses {@code SparkUtil::internalToSpark} and a cache-aware footer path. */
 public class ShimUtilsImpl extends Iceberg19PlusShimUtils {
+    @Override
+    public org.apache.parquet.schema.MessageType unshadeParquetSchema(MessageType schema) {
+        return VariantUnshadeShim$.MODULE$.unshade(schema);
+    }
+
     @Override
     public int formatVersion(Table table) {
         return TableUtil.formatVersion(table);

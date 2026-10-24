@@ -194,7 +194,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
 
   def clipBlocksToSchema(fileReadSchema: ShadedMessageType,
       blocks: Seq[ShadedBlockMetaData]): Seq[BlockMetaData] = {
-    GpuParquetUtils.clipBlocksToSchema(unshade(fileReadSchema),
+    GpuParquetUtils.clipBlocksToSchema(ShimUtils.unshadeParquetSchema(fileReadSchema),
       blocks.map(unshade).asJava,
       conf.caseSensitive)
   }
@@ -279,12 +279,12 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         conf.caseSensitive,
         sqlConf.parquetInferTimestampNTZEnabled,
         sqlConf.legacyParquetNanosAsLong
-      ).convert(unshade(fileReadSchema))
+      ).convert(ShimUtils.unshadeParquetSchema(fileReadSchema))
 
       val parquetFileInfo = ParquetFileInfoWithBlockMeta(file.path,
         blocks,
         InternalRow.empty, // Iceberg handles partition values but itself
-        unshade(fileReadSchema),
+        ShimUtils.unshadeParquetSchema(fileReadSchema),
         partReaderSparkSchema,
         DateTimeRebaseCorrected,
         DateTimeRebaseCorrected,
