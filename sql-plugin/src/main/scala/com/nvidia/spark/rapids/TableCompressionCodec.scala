@@ -71,11 +71,6 @@ trait TableCompressionCodec {
       stream: Cuda.Stream): BatchedBufferDecompressor
 }
 
-/**
- * A small case class used to carry codec-specific settings.
- */
-case class TableCompressionCodecConfig(lz4ChunkSize: Long, zstdChunkSize: Long)
-
 object TableCompressionCodec extends Logging {
   private val codecNameToId = Map(
     "copy" -> CodecType.COPY,
