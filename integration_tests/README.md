@@ -542,6 +542,35 @@ If Spark has been configured to support Iceberg then these tests can be enabled 
 Set `EXPECTED_ICEBERG_VERSION` to the exact Iceberg runtime version whenever `--iceberg` is used;
 pytest reports a configuration error when it is missing.
 
+Select the fast matrix suite with `-m 'iceberg and iceberg_fast_test' --iceberg`.
+Only tests explicitly decorated with `@iceberg_fast_test` from `marks` are included.
+The current allowlist includes tests that support both local and remote catalogs. Tests requiring a
+remote catalog (S3 Tables/REST) and tests skipped for remote catalogs are excluded.
+New unmarked tests stay outside this suite. For example, with Iceberg configured:
+
+```shell
+EXPECTED_ICEBERG_VERSION=1.10.1 \
+  ./integration_tests/run_pyspark_from_build.sh -m 'iceberg and iceberg_fast_test' --iceberg
+```
+
+Nightly pipelines using `jenkins/spark-tests.sh` control version and suite selection through
+`ICEBERG_VERSIONS` and `ICEBERG_FAST_TEST`. Set `ICEBERG_FAST_TEST=1` to append the
+`iceberg_fast_test` marker for local, REST, or S3 Tables tests. It defaults to `0`, which leaves
+the full Iceberg suite selected. For example, `ICEBERG_VERSIONS=1.10.1 ICEBERG_FAST_TEST=1` runs
+only that runtime with the fast suite; use `ICEBERG_FAST_TEST=0` or omit it for the full suite.
+Multiple requested versions run in the supplied order. Without `ICEBERG_VERSIONS`, the job runs
+every JSON-selected version. The caller does not schedule full versus fast runs automatically.
+`TEST_TAGS` optionally adds a marker expression, combined with the Iceberg and fast-suite selectors
+using `and`; for example, `ICEBERG_FAST_TEST=1 TEST_TAGS='not slow'` further filters the fast suite.
+Direct invocations of `run_pyspark_from_build.sh` select the fast suite with `-m` as shown above.
+Catalog and version restrictions still apply. A marker filter matching no tests retains pytest's
+failure status; it is distinct from a successful skip for an empty version selection.
+
+Runtime version queries accept exact `major.minor.patch` releases and read only
+`scripts/iceberg-versions.json`; snapshot selection is not implemented. The dedicated premerge validation
+job checks the complete matrix against Maven using the canonical Scala 2.13 POM, which includes the
+Spark 4 profiles absent from the Scala 2.12 reactor.
+
 When testing Iceberg package-private access paths, load the local Iceberg runtime jar with
 `ICEBERG_EXTRA_CLASSPATH` instead of `PYSP_TEST_spark_jars` or
 `PYSP_TEST_spark_jars_packages`. The test driver will place the RAPIDS, test, and Iceberg
