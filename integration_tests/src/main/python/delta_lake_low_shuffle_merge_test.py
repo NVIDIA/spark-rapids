@@ -96,6 +96,15 @@ def _assert_collect_with_counters(do_merge, data_path, conf, expect_write=True,
                          conf=conf)
         for run in ["CPU", "GPU"]]
     assert cpu_metrics == gpu_metrics, f"CPU {cpu_metrics} vs GPU {gpu_metrics}"
+    if is_databricks_version(17, 3) and expect_write:
+        def check_dv_metrics(spark):
+            row = spark.sql(f"DESCRIBE HISTORY delta.`{data_path}/GPU`") \
+                .where("operation = 'MERGE'").orderBy("version", ascending=False).first()
+            for key in ["numTargetDeletionVectorsAdded", "numTargetDeletionVectorsRemoved",
+                        "numTargetDeletionVectorsUpdated"]:
+                assert int(row["operationMetrics"][key]) == 0
+
+        with_cpu_session(check_dv_metrics, conf=conf)
 
 
 @allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
