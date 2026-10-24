@@ -974,51 +974,71 @@ def test_hex(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('hex(a)'))
 
 
-def even_length_before_spark_332(df):
-    # Before Spark 3.3.2, the CPU decodes an odd number of hex digits incorrectly (SPARK-40924).
-    return df.filter('length(a) % 2 = 0') if is_before_spark_332() else df
+_unhex_odd_length_fix = 'spark.databricks.behaviorChange.SC114071UnhexConvertOddSymbol.enabled'
+_unhex_confs = [{_unhex_odd_length_fix: enabled} for enabled in ['false', 'true']] \
+    if is_databricks_runtime() else [{}]
 
 
-def test_unhex():
+def cpu_compatible_unhex_input(df):
+    # SPARK-40924 affects Spark before 3.3.2 and Databricks with the fix disabled.
+    # Keep nulls in CPU/GPU comparisons; odd-length results are checked directly on the GPU.
+    dbr_legacy_unhex = is_databricks_runtime() and \
+        df.sparkSession.conf.get(_unhex_odd_length_fix, 'false').lower() != 'true'
+    if is_before_spark_332() or dbr_legacy_unhex:
+        return df.filter('a IS NULL OR length(a) % 2 = 0')
+    return df
+
+
+@pytest.mark.parametrize('conf', _unhex_confs)
+def test_unhex(conf):
     values = [('4142',), ('aF',), ('F',), ('ABC',), ('',), ('00FF',),
               ('GG',), ('0xFF',), (' F',), ('é',), (None,)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: even_length_before_spark_332(
-                spark.createDataFrame(values, 'a string')).selectExpr('unhex(a)'))
+            lambda spark: cpu_compatible_unhex_input(
+                spark.createDataFrame(values, 'a string')).selectExpr('unhex(a)'), conf=conf)
 
 
-def test_unhex_odd_length():
+@pytest.mark.parametrize('conf', _unhex_confs)
+@pytest.mark.parametrize('binary_consumer', [False, True])
+def test_unhex_odd_length(binary_consumer, conf):
     values = [('F',), ('ABC',), ('12345',), ('ABG',)]
     expected = [Row(b=bytearray(b'\x0f')), Row(b=bytearray(b'\x0a\xbc')),
                 Row(b=bytearray(b'\x01\x23\x45')), Row(b=None)]
+    expr = 'unhex(a)'
+    if binary_consumer:
+        expr = 'hex(unhex(a))'
+        expected = [Row(b='0F'), Row(b='0ABC'), Row(b='012345'), Row(b=None)]
     actual = with_gpu_session(
             lambda spark: spark.createDataFrame(values, 'a string').selectExpr(
-                'unhex(a) AS b').collect())
+                expr + ' AS b').collect(), conf=conf)
     assert actual == expected
 
 
-def test_unhex_binary_consumer():
+@pytest.mark.parametrize('conf', _unhex_confs)
+def test_unhex_binary_consumer(conf):
     values = [('00FF',), ('F',), ('',), ('GG',), (None,)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.createDataFrame(values, 'a string').selectExpr(
-                'hex(unhex(a))'))
+            lambda spark: cpu_compatible_unhex_input(
+                spark.createDataFrame(values, 'a string')).selectExpr('hex(unhex(a))'), conf=conf)
 
 
 @pytest.mark.parametrize('data_gen', [StringGen('[0-9a-fA-F]{0,16}'), StringGen('.{0,10}')],
                          ids=idfn)
-def test_unhex_generated(data_gen):
+@pytest.mark.parametrize('conf', _unhex_confs)
+def test_unhex_generated(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: even_length_before_spark_332(
-                unary_op_df(spark, data_gen)).selectExpr('unhex(a)'))
+            lambda spark: cpu_compatible_unhex_input(
+                unary_op_df(spark, data_gen)).selectExpr('unhex(a)'), conf=conf)
 
 
 @pytest.mark.skipif(not is_spark_330_or_later() or not is_before_spark_340(),
                     reason='permissive to_binary with hex is Spark 3.3 only')
-def test_to_binary_hex_permissive():
+@pytest.mark.parametrize('conf', _unhex_confs)
+def test_to_binary_hex_permissive(conf):
     values = [('4142',), ('F',), ('GG',), ('',), (None,)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.createDataFrame(values, 'a string').selectExpr(
-                "to_binary(a, 'hex')"))
+            lambda spark: cpu_compatible_unhex_input(
+                spark.createDataFrame(values, 'a string')).selectExpr("to_binary(a, 'hex')"), conf=conf)
 
 
 @allow_non_gpu('Unhex')
