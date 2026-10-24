@@ -116,7 +116,7 @@ case class UnhexRuleMeta(
     r: DataFromReplacementRule)
   extends UnaryExprMeta[Unhex](a, conf, p, r) {
   override def tagExprForGpu(): Unit = {
-    if (a.productArity > 1 && a.productElement(1) == true) {
+    if (UnhexShims.failOnError(a)) {
       willNotWorkOnGpu("error-raising hex conversion is not supported on GPU")
     }
   }
