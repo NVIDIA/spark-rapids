@@ -99,14 +99,9 @@
       "resource": "withResource(offSets)"
     },
     {
+      "resource": "withResource(getNullScalar)",
       "path": "sql-plugin/src/main/scala/org/apache/spark/sql/rapids/collectionOperations.scala",
-      "fingerprint": "e4e7af8a9e767b6086fa",
-      "resource": "withResource(getNullScalar)"
-    },
-    {
-      "path": "sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuHashJoin.scala",
-      "fingerprint": "e94cecefc0efd9c40217",
-      "resource": "withResource(builtTable.filter(trackerTab.getColumn(0)))"
+      "fingerprint": "e4e7af8a9e767b6086fa"
     },
     {
       "path": "sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala",
